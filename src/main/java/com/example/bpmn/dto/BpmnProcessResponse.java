@@ -1,8 +1,8 @@
-package com.example.bpmn.model;
+package com.example.bpmn.dto;
 
 import java.time.LocalDateTime;
 
-public class BpmnProcess {
+public class BpmnProcessResponse {
     private String id;
     private String processKey;
     private String name;
@@ -16,18 +16,33 @@ public class BpmnProcess {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    public BpmnProcess() {
+    public BpmnProcessResponse() {
     }
 
-    public BpmnProcess(String id, String processKey, String name, Integer version, String bpmnXml, String status) {
+    public BpmnProcessResponse(String id, String processKey, String name, Integer version, String bpmnXml, String status, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.processKey = processKey;
         this.name = name;
         this.version = version;
         this.bpmnXml = bpmnXml;
         this.status = status;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
+    public BpmnProcessResponse(String id, String processKey, String name, String description, String category, Integer version, String bpmnXml, String status, String createdBy, String updatedBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.id = id;
+        this.processKey = processKey;
+        this.name = name;
+        this.description = description;
+        this.category = category;
+        this.version = version;
+        this.bpmnXml = bpmnXml;
+        this.status = status;
+        this.createdBy = createdBy;
+        this.updatedBy = updatedBy;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     public String getId() {
