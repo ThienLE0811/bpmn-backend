@@ -47,12 +47,11 @@ public class RouteConfig {
     }
 
     /**
-     * DMN (Decision Model and Notation) Module Routes (placeholder for DMN endpoints)
+     * DMN (Decision Model and Notation) Module Routes
      */
     private static void registerDmnRoutes(HttpServer server, AppContainer container) {
-        // Ví dụ sau này khi có DmnController:
-        // server.createContext("/api/dmn-decisions", container.getDmnController());
-        // logger.info("  [DMN] Registered: /api/dmn-decisions");
+        server.createContext("/api/dmn-decisions", container.getDmnDecisionController());
+        logger.info("  [DMN] Registered: /api/dmn-decisions");
     }
 
     /**

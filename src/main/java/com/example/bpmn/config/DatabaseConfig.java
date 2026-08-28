@@ -81,6 +81,22 @@ public class DatabaseConfig {
                 updated_at TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS dmn_decision (
+                id VARCHAR(100) PRIMARY KEY,
+                decision_key VARCHAR(100) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                hit_policy VARCHAR(50),
+                category VARCHAR(100),
+                version INT DEFAULT 1,
+                dmn_xml TEXT,
+                status VARCHAR(50),
+                created_by VARCHAR(100),
+                updated_by VARCHAR(100),
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS workflows (
                 id VARCHAR(100) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -106,7 +122,7 @@ public class DatabaseConfig {
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.execute(sql);
-            logger.info("Database schema initialized. Tables (users, bpmn_processes, workflows, tasks) are ready.");
+            logger.info("Database schema initialized. Tables (users, bpmn_processes, dmn_decision, workflows, tasks) are ready.");
         } catch (SQLException e) {
             logger.error("Failed to initialize database schema: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to initialize database schema", e);

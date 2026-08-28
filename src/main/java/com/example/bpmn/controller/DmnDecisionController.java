@@ -1,9 +1,9 @@
 package com.example.bpmn.controller;
 
 import com.example.bpmn.dto.ApiResponse;
-import com.example.bpmn.dto.BpmnProcessResponse;
+import com.example.bpmn.dto.DmnDecisionResponse;
 import com.example.bpmn.exception.AppException;
-import com.example.bpmn.service.BpmnProcessService;
+import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.util.JsonUtil;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -16,14 +16,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Controller handling REST API requests for BPMN Process resources via JDK HttpServer.
+ * Controller handling REST API requests for DMN Decision resources via JDK HttpServer.
  */
-public class BpmnProcessController implements HttpHandler {
-    private static final Logger logger = LoggerFactory.getLogger(BpmnProcessController.class);
-    private final BpmnProcessService bpmnProcessService;
+public class DmnDecisionController implements HttpHandler {
+    private static final Logger logger = LoggerFactory.getLogger(DmnDecisionController.class);
+    private final DmnDecisionService dmnDecisionService;
 
-    public BpmnProcessController(BpmnProcessService bpmnProcessService) {
-        this.bpmnProcessService = bpmnProcessService;
+    public DmnDecisionController(DmnDecisionService dmnDecisionService) {
+        this.dmnDecisionService = dmnDecisionService;
     }
 
     @Override
@@ -34,7 +34,7 @@ public class BpmnProcessController implements HttpHandler {
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
         String method = exchange.getRequestMethod();
-        String path = exchange.getRequestURI().getPath(); // e.g. /api/bpmn-processes or /api/bpmn-processes/{id}
+        String path = exchange.getRequestURI().getPath(); // e.g. /api/dmn-decisions or /api/dmn-decisions/{id}
 
         logger.info("Incoming HTTP Request: {} {}", method, path);
 
@@ -47,23 +47,23 @@ public class BpmnProcessController implements HttpHandler {
         try {
             String[] segments = path.split("/");
 
-            if (segments.length == 3 && "bpmn-processes".equals(segments[2])) {
+            if (segments.length == 3 && "dmn-decisions".equals(segments[2])) {
                 if ("GET".equalsIgnoreCase(method)) {
                     handleGetAll(exchange);
                 } else {
                     sendJsonResponse(exchange, 405, ApiResponse.fail("405", "Method Not Allowed"));
                 }
-            } else if (segments.length == 4 && "bpmn-processes".equals(segments[2])) {
+            } else if (segments.length == 4 && "dmn-decisions".equals(segments[2])) {
                 String id = segments[3];
                 if ("GET".equalsIgnoreCase(method)) {
                     handleGetById(exchange, id);
                 } else {
                     sendJsonResponse(exchange, 405, ApiResponse.fail("405", "Method Not Allowed"));
                 }
-            } else if (segments.length == 5 && "bpmn-processes".equals(segments[2]) && "key".equals(segments[3])) {
-                String processKey = segments[4];
+            } else if (segments.length == 5 && "dmn-decisions".equals(segments[2]) && "key".equals(segments[3])) {
+                String decisionKey = segments[4];
                 if ("GET".equalsIgnoreCase(method)) {
-                    handleGetByKey(exchange, processKey);
+                    handleGetByKey(exchange, decisionKey);
                 } else {
                     sendJsonResponse(exchange, 405, ApiResponse.fail("405", "Method Not Allowed"));
                 }
@@ -80,17 +80,17 @@ public class BpmnProcessController implements HttpHandler {
     }
 
     private void handleGetAll(HttpExchange exchange) throws IOException {
-        List<BpmnProcessResponse> list = bpmnProcessService.getAllProcesses();
+        List<DmnDecisionResponse> list = dmnDecisionService.getAllDecisions();
         sendJsonResponse(exchange, 200, ApiResponse.ok(list));
     }
 
     private void handleGetById(HttpExchange exchange, String id) throws IOException {
-        BpmnProcessResponse response = bpmnProcessService.getProcessById(id);
+        DmnDecisionResponse response = dmnDecisionService.getDecisionById(id);
         sendJsonResponse(exchange, 200, ApiResponse.ok(response));
     }
 
-    private void handleGetByKey(HttpExchange exchange, String processKey) throws IOException {
-        BpmnProcessResponse response = bpmnProcessService.getProcessByKey(processKey);
+    private void handleGetByKey(HttpExchange exchange, String decisionKey) throws IOException {
+        DmnDecisionResponse response = dmnDecisionService.getDecisionByKey(decisionKey);
         sendJsonResponse(exchange, 200, ApiResponse.ok(response));
     }
 

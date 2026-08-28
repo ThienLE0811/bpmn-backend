@@ -1,5 +1,6 @@
 package com.example.bpmn.controller;
 
+import com.example.bpmn.dto.ApiResponse;
 import com.example.bpmn.dto.WorkflowRequest;
 import com.example.bpmn.dto.WorkflowResponse;
 import com.example.bpmn.exception.AppException;
@@ -57,7 +58,7 @@ public class WorkflowController implements HttpHandler {
                 } else if ("POST".equalsIgnoreCase(method)) {
                     handleCreate(exchange);
                 } else {
-                    sendJsonResponse(exchange, 405, Map.of("error", "Method Not Allowed"));
+                    sendJsonResponse(exchange, 405, ApiResponse.fail("405", "Method Not Allowed"));
                 }
             } else if (segments.length == 4 && "workflows".equals(segments[2])) {
                 String id = segments[3];
@@ -66,40 +67,40 @@ public class WorkflowController implements HttpHandler {
                 } else if ("DELETE".equalsIgnoreCase(method)) {
                     handleDelete(exchange, id);
                 } else {
-                    sendJsonResponse(exchange, 405, Map.of("error", "Method Not Allowed"));
+                    sendJsonResponse(exchange, 405, ApiResponse.fail("405", "Method Not Allowed"));
                 }
             } else {
-                sendJsonResponse(exchange, 404, Map.of("error", "Endpoint Not Found"));
+                sendJsonResponse(exchange, 404, ApiResponse.fail("404", "Endpoint Not Found"));
             }
         } catch (AppException e) {
             logger.warn("AppException occurred: {}", e.getMessage());
-            sendJsonResponse(exchange, e.getStatusCode(), Map.of("error", e.getMessage()));
+            sendJsonResponse(exchange, e.getStatusCode(), ApiResponse.fail(e.getErrorCode(), e.getMessage()));
         } catch (Exception e) {
             logger.error("Internal Server Error", e);
-            sendJsonResponse(exchange, 500, Map.of("error", "Internal Server Error: " + e.getMessage()));
+            sendJsonResponse(exchange, 500, ApiResponse.fail("500", "Internal Server Error: " + e.getMessage()));
         }
     }
 
     private void handleGetAll(HttpExchange exchange) throws IOException {
         List<WorkflowResponse> list = workflowService.getAllWorkflows();
-        sendJsonResponse(exchange, 200, list);
+        sendJsonResponse(exchange, 200, ApiResponse.ok(list));
     }
 
     private void handleGetById(HttpExchange exchange, String id) throws IOException {
         WorkflowResponse response = workflowService.getWorkflowById(id);
-        sendJsonResponse(exchange, 200, response);
+        sendJsonResponse(exchange, 200, ApiResponse.ok(response));
     }
 
     private void handleCreate(HttpExchange exchange) throws IOException {
         String requestBody = readRequestBody(exchange.getRequestBody());
         WorkflowRequest request = JsonUtil.fromJson(requestBody, WorkflowRequest.class);
         WorkflowResponse response = workflowService.createWorkflow(request);
-        sendJsonResponse(exchange, 201, response);
+        sendJsonResponse(exchange, 201, ApiResponse.ok(response));
     }
 
     private void handleDelete(HttpExchange exchange, String id) throws IOException {
         workflowService.deleteWorkflow(id);
-        sendJsonResponse(exchange, 200, Map.of("message", "Workflow deleted successfully", "id", id));
+        sendJsonResponse(exchange, 200, ApiResponse.ok(Map.of("message", "Workflow deleted successfully", "id", id)));
     }
 
     private String readRequestBody(InputStream inputStream) throws IOException {
