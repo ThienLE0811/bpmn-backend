@@ -17,7 +17,11 @@ public class Main {
 
     public static void main(String[] args) {
         String host = AppConfig.getProperty("server.host", "0.0.0.0");
-        int port = Integer.parseInt(AppConfig.getProperty("server.port", "8080"));
+        // Render assigns the port to listen on via the "PORT" env var at runtime.
+        String renderPort = System.getenv("PORT");
+        int port = Integer.parseInt(renderPort != null && !renderPort.isBlank()
+                ? renderPort
+                : AppConfig.getProperty("server.port", "8080"));
 
         logger.info("Initializing BPMN Backend Application...");
 
@@ -25,7 +29,8 @@ public class Main {
         try {
             DatabaseConfig.initDatabase();
         } catch (Exception e) {
-            logger.error("Failed to connect to Database. Please verify your application.properties settings.", e);
+            logger.error("Failed to connect to Database. Please verify your DATABASE_URL / application.properties settings.", e);
+            throw new IllegalStateException("Aborting startup: database is not reachable", e);
         }
 
         // 2. Initialize Dependency Container (DI)

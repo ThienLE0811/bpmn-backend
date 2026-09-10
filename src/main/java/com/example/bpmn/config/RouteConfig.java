@@ -5,6 +5,10 @@ import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+
 /**
  * Centralized Route Registry for HTTP Server.
  * Routes are modularized by domain (BPMN, DMN, User, Workflow, Task, etc.).
@@ -21,6 +25,7 @@ public class RouteConfig {
     public static void registerRoutes(HttpServer server, AppContainer container) {
         logger.info("Registering API routes across modules...");
 
+        registerHealthRoute(server);
         registerWorkflowRoutes(server, container);
         registerBpmnRoutes(server, container);
         registerDmnRoutes(server, container);
@@ -28,6 +33,23 @@ public class RouteConfig {
         registerTaskRoutes(server, container);
 
         logger.info("All API routes registered successfully.");
+    }
+
+    /**
+     * Health check endpoint for the hosting platform (Render) to poll.
+     */
+    private static void registerHealthRoute(HttpServer server) {
+        server.createContext("/health", exchange -> {
+            byte[] body = "{\"status\":\"OK\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            } catch (IOException e) {
+                logger.warn("Failed to write /health response", e);
+            }
+        });
+        logger.info("  [Health] Registered: /health");
     }
 
     /**
