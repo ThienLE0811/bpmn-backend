@@ -113,10 +113,14 @@ public class DatabaseConfig {
             CREATE TABLE IF NOT EXISTS bpmn_processes (
                 id VARCHAR(100) PRIMARY KEY,
                 process_key VARCHAR(100) NOT NULL,
-                name VARCHAR(255) NOT NULL,
+                process_name VARCHAR(255) NOT NULL,
+                description TEXT,
+                category VARCHAR(100),
                 version INT DEFAULT 1,
                 bpmn_xml TEXT,
                 status VARCHAR(50),
+                created_by VARCHAR(100),
+                updated_by VARCHAR(100),
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             );
