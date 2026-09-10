@@ -1,13 +1,19 @@
 package com.example.bpmn.service.impl;
 
+import com.example.bpmn.dto.UserRequest;
 import com.example.bpmn.dto.UserResponse;
+import com.example.bpmn.dto.UserUpdateRequest;
+import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.UserMapper;
+import com.example.bpmn.model.User;
 import com.example.bpmn.repository.UserRepository;
 import com.example.bpmn.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class UserServiceImpl implements UserService {
@@ -24,5 +30,84 @@ public class UserServiceImpl implements UserService {
         return userRepository.findAll().stream()
                 .map(UserMapper::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public UserResponse getUserById(String id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new AppException("User not found with id: " + id, 404));
+        return UserMapper.toResponse(user);
+    }
+
+    @Override
+    public UserResponse createUser(UserRequest request) {
+        if (request.getUsername() == null || request.getUsername().isBlank()) {
+            throw new AppException("Username must not be empty", 400);
+        }
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new AppException("Email must not be empty", 400);
+        }
+        if (userRepository.findByUsername(request.getUsername()).isPresent()) {
+            throw new AppException("Username already exists: " + request.getUsername(), 409);
+        }
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            throw new AppException("Email already exists: " + request.getEmail(), 409);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        User user = new User();
+        user.setId(UUID.randomUUID().toString());
+        user.setUsername(request.getUsername());
+        user.setEmail(request.getEmail());
+        user.setFullName(request.getFullName());
+        user.setRole(request.getRole());
+        user.setStatus("ACTIVE");
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        User saved = userRepository.save(user);
+        logger.info("Saved new user with ID: {}", saved.getId());
+        return UserMapper.toResponse(saved);
+    }
+
+    @Override
+    public UserResponse updateUser(String id, UserUpdateRequest request) {
+        User existing = userRepository.findById(id)
+                .orElseThrow(() -> new AppException("User not found with id: " + id, 404));
+
+        if (request.getEmail() != null) {
+            if (request.getEmail().isBlank()) {
+                throw new AppException("Email must not be empty", 400);
+            }
+            userRepository.findByEmail(request.getEmail())
+                    .filter(other -> !other.getId().equals(id))
+                    .ifPresent(other -> {
+                        throw new AppException("Email already exists: " + request.getEmail(), 409);
+                    });
+            existing.setEmail(request.getEmail());
+        }
+        if (request.getFullName() != null) {
+            existing.setFullName(request.getFullName());
+        }
+        if (request.getRole() != null) {
+            existing.setRole(request.getRole());
+        }
+        if (request.getStatus() != null) {
+            existing.setStatus(request.getStatus());
+        }
+        existing.setUpdatedAt(LocalDateTime.now());
+
+        User saved = userRepository.save(existing);
+        logger.info("Updated user with ID: {}", saved.getId());
+        return UserMapper.toResponse(saved);
+    }
+
+    @Override
+    public void deleteUser(String id) {
+        boolean deleted = userRepository.deleteById(id);
+        if (!deleted) {
+            throw new AppException("User not found with id: " + id, 404);
+        }
+        logger.info("Deleted user with ID: {}", id);
     }
 }

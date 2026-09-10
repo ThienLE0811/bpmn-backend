@@ -62,7 +62,7 @@ public class PostgresBpmnProcessRepository implements BpmnProcessRepository {
 
     @Override
     public Optional<BpmnProcess> findById(String id) {
-        String sql = "SELECT * FROM bpmn_processes WHERE id = ?";
+        String sql = "SELECT * FROM bpmn_processes WHERE id::text = ?";
 
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {

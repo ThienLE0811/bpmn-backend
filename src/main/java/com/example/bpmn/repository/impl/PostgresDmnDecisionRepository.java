@@ -64,7 +64,7 @@ public class PostgresDmnDecisionRepository implements DmnDecisionRepository {
 
     @Override
     public Optional<DmnDecision> findById(String id) {
-        String sql = "SELECT * FROM dmn_decision WHERE id = ?";
+        String sql = "SELECT * FROM dmn_decision WHERE id::text = ?";
 
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
