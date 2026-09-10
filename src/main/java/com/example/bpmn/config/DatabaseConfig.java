@@ -99,7 +99,7 @@ public class DatabaseConfig {
      */
     public static void initDatabase() {
         String sql = """
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS public.users (
                 id VARCHAR(100) PRIMARY KEY,
                 username VARCHAR(100) UNIQUE NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
@@ -110,7 +110,7 @@ public class DatabaseConfig {
                 updated_at TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS bpmn_processes (
+            CREATE TABLE IF NOT EXISTS public.bpmn_processes (
                 id VARCHAR(100) PRIMARY KEY,
                 process_key VARCHAR(100) NOT NULL,
                 process_name VARCHAR(255) NOT NULL,
@@ -125,7 +125,7 @@ public class DatabaseConfig {
                 updated_at TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS dmn_decision (
+            CREATE TABLE IF NOT EXISTS public.dmn_decision (
                 id VARCHAR(100) PRIMARY KEY,
                 decision_key VARCHAR(100) NOT NULL,
                 name VARCHAR(255) NOT NULL,
@@ -141,7 +141,7 @@ public class DatabaseConfig {
                 updated_at TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS workflows (
+            CREATE TABLE IF NOT EXISTS public.workflows (
                 id VARCHAR(100) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 description TEXT,
@@ -150,7 +150,7 @@ public class DatabaseConfig {
                 updated_at TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS tasks (
+            CREATE TABLE IF NOT EXISTS public.tasks (
                 id VARCHAR(100) PRIMARY KEY,
                 process_id VARCHAR(100),
                 name VARCHAR(255) NOT NULL,
