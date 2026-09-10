@@ -55,12 +55,11 @@ public class RouteConfig {
     }
 
     /**
-     * User Module Routes (placeholder for User endpoints)
+     * User Module Routes
      */
     private static void registerUserRoutes(HttpServer server, AppContainer container) {
-        // Ví dụ sau này khi có UserController:
-        // server.createContext("/api/users", container.getUserController());
-        // logger.info("  [User] Registered: /api/users");
+        server.createContext("/api/users", container.getUserController());
+        logger.info("  [User] Registered: /api/users");
     }
 
     /**

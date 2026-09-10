@@ -3,6 +3,7 @@ package com.example.bpmn.service.impl;
 import com.example.bpmn.dto.WorkflowRequest;
 import com.example.bpmn.dto.WorkflowResponse;
 import com.example.bpmn.exception.AppException;
+import com.example.bpmn.mapper.WorkflowMapper;
 import com.example.bpmn.model.Workflow;
 import com.example.bpmn.repository.WorkflowRepository;
 import com.example.bpmn.service.WorkflowService;
@@ -41,20 +42,20 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         Workflow saved = workflowRepository.save(workflow);
         logger.info("Saved new workflow with ID: {}", saved.getId());
-        return mapToResponse(saved);
+        return WorkflowMapper.toResponse(saved);
     }
 
     @Override
     public WorkflowResponse getWorkflowById(String id) {
         Workflow workflow = workflowRepository.findById(id)
                 .orElseThrow(() -> new AppException("Workflow not found with id: " + id, 404));
-        return mapToResponse(workflow);
+        return WorkflowMapper.toResponse(workflow);
     }
 
     @Override
     public List<WorkflowResponse> getAllWorkflows() {
         return workflowRepository.findAll().stream()
-                .map(this::mapToResponse)
+                .map(WorkflowMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -65,15 +66,5 @@ public class WorkflowServiceImpl implements WorkflowService {
             throw new AppException("Workflow not found with id: " + id, 404);
         }
         logger.info("Deleted workflow with ID: {}", id);
-    }
-
-    private WorkflowResponse mapToResponse(Workflow workflow) {
-        return new WorkflowResponse(
-                workflow.getId(),
-                workflow.getName(),
-                workflow.getDescription(),
-                workflow.getStatus(),
-                workflow.getCreatedAt()
-        );
     }
 }

@@ -2,6 +2,7 @@ package com.example.bpmn.service.impl;
 
 import com.example.bpmn.dto.BpmnProcessResponse;
 import com.example.bpmn.exception.AppException;
+import com.example.bpmn.mapper.BpmnProcessMapper;
 import com.example.bpmn.model.BpmnProcess;
 import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.service.BpmnProcessService;
@@ -23,7 +24,7 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     public List<BpmnProcessResponse> getAllProcesses() {
         logger.info("Fetching all BPMN processes from database");
         return bpmnProcessRepository.findAll().stream()
-                .map(this::mapToResponse)
+                .map(BpmnProcessMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -31,30 +32,13 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     public BpmnProcessResponse getProcessById(String id) {
         BpmnProcess process = bpmnProcessRepository.findById(id)
                 .orElseThrow(() -> new AppException("BPMN process not found with id: " + id, 404));
-        return mapToResponse(process);
+        return BpmnProcessMapper.toResponse(process);
     }
 
     @Override
     public BpmnProcessResponse getProcessByKey(String processKey) {
         BpmnProcess process = bpmnProcessRepository.findByProcessKey(processKey)
                 .orElseThrow(() -> new AppException("BPMN process not found with key: " + processKey, 404));
-        return mapToResponse(process);
-    }
-
-    private BpmnProcessResponse mapToResponse(BpmnProcess process) {
-        return new BpmnProcessResponse(
-                process.getId(),
-                process.getProcessKey(),
-                process.getName(),
-                process.getDescription(),
-                process.getCategory(),
-                process.getVersion(),
-                process.getBpmnXml(),
-                process.getStatus(),
-                process.getCreatedBy(),
-                process.getUpdatedBy(),
-                process.getCreatedAt(),
-                process.getUpdatedAt()
-        );
+        return BpmnProcessMapper.toResponse(process);
     }
 }

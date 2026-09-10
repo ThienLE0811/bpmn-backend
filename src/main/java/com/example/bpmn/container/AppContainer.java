@@ -2,18 +2,23 @@ package com.example.bpmn.container;
 
 import com.example.bpmn.controller.BpmnProcessController;
 import com.example.bpmn.controller.DmnDecisionController;
+import com.example.bpmn.controller.UserController;
 import com.example.bpmn.controller.WorkflowController;
 import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.repository.DmnDecisionRepository;
+import com.example.bpmn.repository.UserRepository;
 import com.example.bpmn.repository.WorkflowRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionRepository;
+import com.example.bpmn.repository.impl.PostgresUserRepository;
 import com.example.bpmn.repository.impl.PostgresWorkflowRepository;
 import com.example.bpmn.service.BpmnProcessService;
 import com.example.bpmn.service.DmnDecisionService;
+import com.example.bpmn.service.UserService;
 import com.example.bpmn.service.WorkflowService;
 import com.example.bpmn.service.impl.BpmnProcessServiceImpl;
 import com.example.bpmn.service.impl.DmnDecisionServiceImpl;
+import com.example.bpmn.service.impl.UserServiceImpl;
 import com.example.bpmn.service.impl.WorkflowServiceImpl;
 
 /**
@@ -25,32 +30,38 @@ public class AppContainer {
     private final WorkflowRepository workflowRepository;
     private final BpmnProcessRepository bpmnProcessRepository;
     private final DmnDecisionRepository dmnDecisionRepository;
+    private final UserRepository userRepository;
 
     // Services
     private final WorkflowService workflowService;
     private final BpmnProcessService bpmnProcessService;
     private final DmnDecisionService dmnDecisionService;
+    private final UserService userService;
 
     // Controllers
     private final WorkflowController workflowController;
     private final BpmnProcessController bpmnProcessController;
     private final DmnDecisionController dmnDecisionController;
+    private final UserController userController;
 
     public AppContainer() {
         // 1. Repositories initialization
         this.workflowRepository = new PostgresWorkflowRepository();
         this.bpmnProcessRepository = new PostgresBpmnProcessRepository();
         this.dmnDecisionRepository = new PostgresDmnDecisionRepository();
+        this.userRepository = new PostgresUserRepository();
 
         // 2. Services initialization
         this.workflowService = new WorkflowServiceImpl(this.workflowRepository);
         this.bpmnProcessService = new BpmnProcessServiceImpl(this.bpmnProcessRepository);
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository);
+        this.userService = new UserServiceImpl(this.userRepository);
 
         // 3. Controllers initialization
         this.workflowController = new WorkflowController(this.workflowService);
         this.bpmnProcessController = new BpmnProcessController(this.bpmnProcessService);
         this.dmnDecisionController = new DmnDecisionController(this.dmnDecisionService);
+        this.userController = new UserController(this.userService);
     }
 
     public WorkflowController getWorkflowController() {
@@ -65,6 +76,10 @@ public class AppContainer {
         return dmnDecisionController;
     }
 
+    public UserController getUserController() {
+        return userController;
+    }
+
     public WorkflowService getWorkflowService() {
         return workflowService;
     }
@@ -77,6 +92,10 @@ public class AppContainer {
         return dmnDecisionService;
     }
 
+    public UserService getUserService() {
+        return userService;
+    }
+
     public WorkflowRepository getWorkflowRepository() {
         return workflowRepository;
     }
@@ -87,5 +106,9 @@ public class AppContainer {
 
     public DmnDecisionRepository getDmnDecisionRepository() {
         return dmnDecisionRepository;
+    }
+
+    public UserRepository getUserRepository() {
+        return userRepository;
     }
 }
