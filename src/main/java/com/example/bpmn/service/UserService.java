@@ -10,6 +10,6 @@ public interface UserService {
     List<UserResponse> getAllUsers();
     UserResponse getUserById(String id);
     UserResponse createUser(UserRequest request);
-    UserResponse updateUser(String id, UserUpdateRequest request);
+    UserResponse updateUser(String id, UserUpdateRequest request, String requesterId, String requesterRole);
     void deleteUser(String id);
 }

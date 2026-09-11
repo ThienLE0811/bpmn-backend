@@ -22,7 +22,7 @@ public class UserController extends BaseController {
                 userService.createUser(ctx.body(UserRequest.class))));
         get("/api/users/:id", ctx -> userService.getUserById(ctx.param("id")));
         put("/api/users/:id", ctx -> userService.updateUser(
-                ctx.param("id"), ctx.body(UserUpdateRequest.class)));
+                ctx.param("id"), ctx.body(UserUpdateRequest.class), ctx.authUserId(), ctx.authRole()));
         delete("/api/users/:id", ctx -> {
             String id = ctx.param("id");
             userService.deleteUser(id);

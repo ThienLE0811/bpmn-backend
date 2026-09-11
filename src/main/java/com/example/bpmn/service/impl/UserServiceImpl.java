@@ -76,7 +76,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public UserResponse updateUser(String id, UserUpdateRequest request) {
+    public UserResponse updateUser(String id, UserUpdateRequest request, String requesterId, String requesterRole) {
         User existing = userRepository.findById(id)
                 .orElseThrow(() -> new AppException("User not found with id: " + id, 404));
 
@@ -101,6 +101,11 @@ public class UserServiceImpl implements UserService {
             existing.setStatus(request.getStatus());
         }
         if (request.getPassword() != null) {
+            boolean isSelf = id.equals(requesterId);
+            boolean isAdmin = "ADMIN".equalsIgnoreCase(requesterRole);
+            if (!isSelf && !isAdmin) {
+                throw new AppException("Only the account owner or an administrator can change this password", 403);
+            }
             if (request.getPassword().length() < 8) {
                 throw new AppException("Password must be at least 8 characters", 400);
             }

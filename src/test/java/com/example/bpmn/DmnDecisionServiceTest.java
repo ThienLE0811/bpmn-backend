@@ -3,7 +3,9 @@ package com.example.bpmn;
 import com.example.bpmn.dto.DmnDecisionResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.DmnDecision;
+import com.example.bpmn.model.DmnDecisionVersion;
 import com.example.bpmn.repository.DmnDecisionRepository;
+import com.example.bpmn.repository.DmnDecisionVersionRepository;
 import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.impl.DmnDecisionServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,7 +58,31 @@ class DmnDecisionServiceTest {
             }
         };
 
-        dmnDecisionService = new DmnDecisionServiceImpl(mockRepo);
+        DmnDecisionVersionRepository mockVersionRepo = new DmnDecisionVersionRepository() {
+            private final List<DmnDecisionVersion> versions = new ArrayList<>();
+
+            @Override
+            public DmnDecisionVersion save(DmnDecisionVersion version) {
+                versions.add(version);
+                return version;
+            }
+
+            @Override
+            public List<DmnDecisionVersion> findByDecisionId(String decisionId) {
+                return versions.stream()
+                        .filter(v -> decisionId.equals(v.getDecisionId()))
+                        .toList();
+            }
+
+            @Override
+            public Optional<DmnDecisionVersion> findByDecisionIdAndVersion(String decisionId, int version) {
+                return versions.stream()
+                        .filter(v -> decisionId.equals(v.getDecisionId()) && version == v.getVersion())
+                        .findFirst();
+            }
+        };
+
+        dmnDecisionService = new DmnDecisionServiceImpl(mockRepo, mockVersionRepo);
     }
 
     @Test

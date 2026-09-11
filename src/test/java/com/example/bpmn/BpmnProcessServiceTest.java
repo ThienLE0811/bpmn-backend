@@ -3,7 +3,9 @@ package com.example.bpmn;
 import com.example.bpmn.dto.BpmnProcessResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.BpmnProcess;
+import com.example.bpmn.model.BpmnProcessVersion;
 import com.example.bpmn.repository.BpmnProcessRepository;
+import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.service.BpmnProcessService;
 import com.example.bpmn.service.impl.BpmnProcessServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +55,31 @@ class BpmnProcessServiceTest {
             }
         };
 
-        bpmnProcessService = new BpmnProcessServiceImpl(mockRepo);
+        BpmnProcessVersionRepository mockVersionRepo = new BpmnProcessVersionRepository() {
+            private final List<BpmnProcessVersion> versions = new ArrayList<>();
+
+            @Override
+            public BpmnProcessVersion save(BpmnProcessVersion version) {
+                versions.add(version);
+                return version;
+            }
+
+            @Override
+            public List<BpmnProcessVersion> findByProcessId(String processId) {
+                return versions.stream()
+                        .filter(v -> processId.equals(v.getProcessId()))
+                        .toList();
+            }
+
+            @Override
+            public Optional<BpmnProcessVersion> findByProcessIdAndVersion(String processId, int version) {
+                return versions.stream()
+                        .filter(v -> processId.equals(v.getProcessId()) && version == v.getVersion())
+                        .findFirst();
+            }
+        };
+
+        bpmnProcessService = new BpmnProcessServiceImpl(mockRepo, mockVersionRepo);
     }
 
     @Test
