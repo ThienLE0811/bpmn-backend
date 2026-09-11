@@ -60,7 +60,10 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
-    public void deleteWorkflow(String id) {
+    public void deleteWorkflow(String id, String requesterRole) {
+        if (!"ADMIN".equalsIgnoreCase(requesterRole)) {
+            throw new AppException("Only administrators can delete workflows", 403);
+        }
         boolean deleted = workflowRepository.deleteById(id);
         if (!deleted) {
             throw new AppException("Workflow not found with id: " + id, 404);

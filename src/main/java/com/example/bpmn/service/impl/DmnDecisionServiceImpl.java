@@ -53,7 +53,7 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
     }
 
     @Override
-    public DmnDecisionResponse createDecision(DmnDecisionRequest request) {
+    public DmnDecisionResponse createDecision(DmnDecisionRequest request, String requesterUsername) {
         if (request.getDecisionKey() == null || request.getDecisionKey().isBlank()) {
             throw new AppException("DMN decision key must not be empty", 400);
         }
@@ -73,8 +73,7 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
         decision.setVersion(1);
         decision.setDmnXml(request.getDmnXml());
         decision.setStatus("DRAFT");
-        decision.setCreatedBy(request.getCreatedBy() != null && !request.getCreatedBy().isBlank()
-                ? request.getCreatedBy() : "system");
+        decision.setCreatedBy(requesterUsername);
         decision.setCreatedAt(now);
         decision.setUpdatedAt(now);
 
@@ -85,9 +84,12 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
     }
 
     @Override
-    public DmnDecisionResponse updateDecision(String id, DmnDecisionUpdateRequest request) {
+    public DmnDecisionResponse updateDecision(String id, DmnDecisionUpdateRequest request,
+                                               String requesterUsername, String requesterRole) {
         DmnDecision existing = dmnDecisionRepository.findById(id)
                 .orElseThrow(() -> new AppException("DMN decision not found with id: " + id, 404));
+        requireOwnerOrAdmin(existing.getCreatedBy(), requesterUsername, requesterRole,
+                "Only the creator or an administrator can modify this decision");
 
         if (request.getName() != null) {
             if (request.getName().isBlank()) {
@@ -115,9 +117,7 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
         if (request.getStatus() != null) {
             existing.setStatus(request.getStatus());
         }
-        if (request.getUpdatedBy() != null) {
-            existing.setUpdatedBy(request.getUpdatedBy());
-        }
+        existing.setUpdatedBy(requesterUsername);
         existing.setUpdatedAt(LocalDateTime.now());
 
         DmnDecision saved = dmnDecisionRepository.save(existing);
@@ -140,11 +140,21 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
     }
 
     @Override
-    public void deleteDecision(String id) {
-        boolean deleted = dmnDecisionRepository.deleteById(id);
-        if (!deleted) {
-            throw new AppException("DMN decision not found with id: " + id, 404);
-        }
+    public void deleteDecision(String id, String requesterUsername, String requesterRole) {
+        DmnDecision existing = dmnDecisionRepository.findById(id)
+                .orElseThrow(() -> new AppException("DMN decision not found with id: " + id, 404));
+        requireOwnerOrAdmin(existing.getCreatedBy(), requesterUsername, requesterRole,
+                "Only the creator or an administrator can delete this decision");
+
+        dmnDecisionRepository.deleteById(id);
         logger.info("Deleted DMN decision with ID: {}", id);
+    }
+
+    private void requireOwnerOrAdmin(String createdBy, String requesterUsername, String requesterRole, String message) {
+        boolean isOwner = createdBy != null && createdBy.equals(requesterUsername);
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(requesterRole);
+        if (!isOwner && !isAdmin) {
+            throw new AppException(message, 403);
+        }
     }
 }

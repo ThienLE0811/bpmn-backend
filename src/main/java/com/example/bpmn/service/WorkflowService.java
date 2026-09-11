@@ -9,5 +9,5 @@ public interface WorkflowService {
     WorkflowResponse createWorkflow(WorkflowRequest request);
     WorkflowResponse getWorkflowById(String id);
     List<WorkflowResponse> getAllWorkflows();
-    void deleteWorkflow(String id);
+    void deleteWorkflow(String id, String requesterRole);
 }

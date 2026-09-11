@@ -9,12 +9,14 @@ import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.DmnDecisionRepository;
 import com.example.bpmn.repository.DmnDecisionVersionRepository;
+import com.example.bpmn.repository.RefreshTokenRepository;
 import com.example.bpmn.repository.UserRepository;
 import com.example.bpmn.repository.WorkflowRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessVersionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionVersionRepository;
+import com.example.bpmn.repository.impl.PostgresRefreshTokenRepository;
 import com.example.bpmn.repository.impl.PostgresUserRepository;
 import com.example.bpmn.repository.impl.PostgresWorkflowRepository;
 import com.example.bpmn.service.AuthService;
@@ -40,6 +42,7 @@ public class AppContainer {
     private final DmnDecisionRepository dmnDecisionRepository;
     private final DmnDecisionVersionRepository dmnDecisionVersionRepository;
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     // Services
     private final WorkflowService workflowService;
@@ -63,13 +66,14 @@ public class AppContainer {
         this.dmnDecisionRepository = new PostgresDmnDecisionRepository();
         this.dmnDecisionVersionRepository = new PostgresDmnDecisionVersionRepository();
         this.userRepository = new PostgresUserRepository();
+        this.refreshTokenRepository = new PostgresRefreshTokenRepository();
 
         // 2. Services initialization
         this.workflowService = new WorkflowServiceImpl(this.workflowRepository);
         this.bpmnProcessService = new BpmnProcessServiceImpl(this.bpmnProcessRepository, this.bpmnProcessVersionRepository);
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
-        this.authService = new AuthServiceImpl(this.userRepository);
+        this.authService = new AuthServiceImpl(this.userRepository, this.refreshTokenRepository);
 
         // 3. Controllers initialization
         this.workflowController = new WorkflowController(this.workflowService);
@@ -141,5 +145,9 @@ public class AppContainer {
 
     public UserRepository getUserRepository() {
         return userRepository;
+    }
+
+    public RefreshTokenRepository getRefreshTokenRepository() {
+        return refreshTokenRepository;
     }
 }

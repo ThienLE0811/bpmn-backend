@@ -20,11 +20,11 @@ public class BpmnProcessController extends BaseController {
 
         get("/api/bpmn-processes", ctx -> bpmnProcessService.getAllProcesses());
         post("/api/bpmn-processes", ctx -> HttpResult.created(
-                bpmnProcessService.createProcess(ctx.body(BpmnProcessRequest.class))));
+                bpmnProcessService.createProcess(ctx.body(BpmnProcessRequest.class), ctx.authUsername())));
         get("/api/bpmn-processes/key/:key", ctx -> bpmnProcessService.getProcessByKey(ctx.param("key")));
         get("/api/bpmn-processes/:id", ctx -> bpmnProcessService.getProcessById(ctx.param("id")));
         put("/api/bpmn-processes/:id", ctx -> bpmnProcessService.updateProcess(
-                ctx.param("id"), ctx.body(BpmnProcessUpdateRequest.class)));
+                ctx.param("id"), ctx.body(BpmnProcessUpdateRequest.class), ctx.authUsername(), ctx.authRole()));
         get("/api/bpmn-processes/:id/versions", ctx -> bpmnProcessService.getVersionHistory(ctx.param("id")));
         get("/api/bpmn-processes/:id/versions/:version", ctx -> {
             String versionParam = ctx.param("version");
@@ -36,7 +36,7 @@ public class BpmnProcessController extends BaseController {
         });
         delete("/api/bpmn-processes/:id", ctx -> {
             String id = ctx.param("id");
-            bpmnProcessService.deleteProcess(id);
+            bpmnProcessService.deleteProcess(id, ctx.authUsername(), ctx.authRole());
             return Map.of("message", "BPMN process deleted successfully", "id", id);
         });
     }

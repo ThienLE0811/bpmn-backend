@@ -19,14 +19,14 @@ public class DmnDecisionController extends BaseController {
 
         get("/api/dmn-decisions", ctx -> dmnDecisionService.getAllDecisions());
         post("/api/dmn-decisions", ctx -> HttpResult.created(
-                dmnDecisionService.createDecision(ctx.body(DmnDecisionRequest.class))));
+                dmnDecisionService.createDecision(ctx.body(DmnDecisionRequest.class), ctx.authUsername())));
         get("/api/dmn-decisions/key/:key", ctx -> dmnDecisionService.getDecisionByKey(ctx.param("key")));
         get("/api/dmn-decisions/:id", ctx -> dmnDecisionService.getDecisionById(ctx.param("id")));
         put("/api/dmn-decisions/:id", ctx -> dmnDecisionService.updateDecision(
-                ctx.param("id"), ctx.body(DmnDecisionUpdateRequest.class)));
+                ctx.param("id"), ctx.body(DmnDecisionUpdateRequest.class), ctx.authUsername(), ctx.authRole()));
         delete("/api/dmn-decisions/:id", ctx -> {
             String id = ctx.param("id");
-            dmnDecisionService.deleteDecision(id);
+            dmnDecisionService.deleteDecision(id, ctx.authUsername(), ctx.authRole());
             return Map.of("message", "DMN decision deleted successfully", "id", id);
         });
     }

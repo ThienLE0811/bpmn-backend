@@ -19,13 +19,13 @@ public class UserController extends BaseController {
 
         get("/api/users", ctx -> userService.getAllUsers());
         post("/api/users", ctx -> HttpResult.created(
-                userService.createUser(ctx.body(UserRequest.class))));
+                userService.createUser(ctx.body(UserRequest.class), ctx.authRole())));
         get("/api/users/:id", ctx -> userService.getUserById(ctx.param("id")));
         put("/api/users/:id", ctx -> userService.updateUser(
                 ctx.param("id"), ctx.body(UserUpdateRequest.class), ctx.authUserId(), ctx.authRole()));
         delete("/api/users/:id", ctx -> {
             String id = ctx.param("id");
-            userService.deleteUser(id);
+            userService.deleteUser(id, ctx.authRole());
             return Map.of("message", "User deleted successfully", "id", id);
         });
     }

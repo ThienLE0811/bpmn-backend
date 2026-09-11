@@ -24,6 +24,7 @@ public class JwtUtil {
 
     private static final SecretKey SECRET_KEY;
     private static final long EXPIRATION_MINUTES;
+    private static final long REFRESH_EXPIRATION_DAYS;
 
     static {
         String secret = AppConfig.getProperty("jwt.secret", DEFAULT_SECRET);
@@ -34,6 +35,7 @@ public class JwtUtil {
         }
         SECRET_KEY = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         EXPIRATION_MINUTES = Long.parseLong(AppConfig.getProperty("jwt.expiration-minutes", "60"));
+        REFRESH_EXPIRATION_DAYS = Long.parseLong(AppConfig.getProperty("jwt.refresh-expiration-days", "7"));
     }
 
     private JwtUtil() {
@@ -55,6 +57,10 @@ public class JwtUtil {
 
     public static long getExpirationSeconds() {
         return EXPIRATION_MINUTES * 60;
+    }
+
+    public static long getRefreshExpirationDays() {
+        return REFRESH_EXPIRATION_DAYS;
     }
 
     public static Claims parseToken(String token) {

@@ -55,7 +55,7 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     }
 
     @Override
-    public BpmnProcessResponse createProcess(BpmnProcessRequest request) {
+    public BpmnProcessResponse createProcess(BpmnProcessRequest request, String requesterUsername) {
         if (request.getProcessKey() == null || request.getProcessKey().isBlank()) {
             throw new AppException("BPMN process key must not be empty", 400);
         }
@@ -73,7 +73,7 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
         process.setVersion(1);
         process.setBpmnXml(request.getBpmnXml());
         process.setStatus("DRAFT");
-        process.setCreatedBy(request.getCreatedBy());
+        process.setCreatedBy(requesterUsername);
         process.setCreatedAt(now);
         process.setUpdatedAt(now);
 
@@ -84,9 +84,12 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     }
 
     @Override
-    public BpmnProcessResponse updateProcess(String id, BpmnProcessUpdateRequest request) {
+    public BpmnProcessResponse updateProcess(String id, BpmnProcessUpdateRequest request,
+                                              String requesterUsername, String requesterRole) {
         BpmnProcess existing = bpmnProcessRepository.findById(id)
                 .orElseThrow(() -> new AppException("BPMN process not found with id: " + id, 404));
+        requireOwnerOrAdmin(existing.getCreatedBy(), requesterUsername, requesterRole,
+                "Only the creator or an administrator can modify this process");
 
         if (request.getName() != null) {
             if (request.getName().isBlank()) {
@@ -111,9 +114,7 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
         if (request.getStatus() != null) {
             existing.setStatus(request.getStatus());
         }
-        if (request.getUpdatedBy() != null) {
-            existing.setUpdatedBy(request.getUpdatedBy());
-        }
+        existing.setUpdatedBy(requesterUsername);
         existing.setUpdatedAt(LocalDateTime.now());
 
         BpmnProcess saved = bpmnProcessRepository.save(existing);
@@ -136,12 +137,22 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     }
 
     @Override
-    public void deleteProcess(String id) {
-        boolean deleted = bpmnProcessRepository.deleteById(id);
-        if (!deleted) {
-            throw new AppException("BPMN process not found with id: " + id, 404);
-        }
+    public void deleteProcess(String id, String requesterUsername, String requesterRole) {
+        BpmnProcess existing = bpmnProcessRepository.findById(id)
+                .orElseThrow(() -> new AppException("BPMN process not found with id: " + id, 404));
+        requireOwnerOrAdmin(existing.getCreatedBy(), requesterUsername, requesterRole,
+                "Only the creator or an administrator can delete this process");
+
+        bpmnProcessRepository.deleteById(id);
         logger.info("Deleted BPMN process with ID: {}", id);
+    }
+
+    private void requireOwnerOrAdmin(String createdBy, String requesterUsername, String requesterRole, String message) {
+        boolean isOwner = createdBy != null && createdBy.equals(requesterUsername);
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(requesterRole);
+        if (!isOwner && !isAdmin) {
+            throw new AppException(message, 403);
+        }
     }
 
     @Override

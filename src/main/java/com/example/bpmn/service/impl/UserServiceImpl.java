@@ -41,7 +41,10 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public UserResponse createUser(UserRequest request) {
+    public UserResponse createUser(UserRequest request, String requesterRole) {
+        if (!"ADMIN".equalsIgnoreCase(requesterRole)) {
+            throw new AppException("Only administrators can create users", 403);
+        }
         if (request.getUsername() == null || request.getUsername().isBlank()) {
             throw new AppException("Username must not be empty", 400);
         }
@@ -80,6 +83,12 @@ public class UserServiceImpl implements UserService {
         User existing = userRepository.findById(id)
                 .orElseThrow(() -> new AppException("User not found with id: " + id, 404));
 
+        boolean isSelf = id.equals(requesterId);
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(requesterRole);
+        if (!isSelf && !isAdmin) {
+            throw new AppException("Only the account owner or an administrator can update this user", 403);
+        }
+
         if (request.getEmail() != null) {
             if (request.getEmail().isBlank()) {
                 throw new AppException("Email must not be empty", 400);
@@ -95,17 +104,18 @@ public class UserServiceImpl implements UserService {
             existing.setFullName(request.getFullName());
         }
         if (request.getRole() != null) {
+            if (!isAdmin) {
+                throw new AppException("Only administrators can change role", 403);
+            }
             existing.setRole(request.getRole());
         }
         if (request.getStatus() != null) {
+            if (!isAdmin) {
+                throw new AppException("Only administrators can change status", 403);
+            }
             existing.setStatus(request.getStatus());
         }
         if (request.getPassword() != null) {
-            boolean isSelf = id.equals(requesterId);
-            boolean isAdmin = "ADMIN".equalsIgnoreCase(requesterRole);
-            if (!isSelf && !isAdmin) {
-                throw new AppException("Only the account owner or an administrator can change this password", 403);
-            }
             if (request.getPassword().length() < 8) {
                 throw new AppException("Password must be at least 8 characters", 400);
             }
@@ -119,7 +129,10 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void deleteUser(String id) {
+    public void deleteUser(String id, String requesterRole) {
+        if (!"ADMIN".equalsIgnoreCase(requesterRole)) {
+            throw new AppException("Only administrators can delete users", 403);
+        }
         boolean deleted = userRepository.deleteById(id);
         if (!deleted) {
             throw new AppException("User not found with id: " + id, 404);

@@ -10,7 +10,6 @@ public class DmnDecisionUpdateRequest {
     private String category;
     private String dmnXml;
     private String status;
-    private String updatedBy;
 
     public DmnDecisionUpdateRequest() {
     }
@@ -61,13 +60,5 @@ public class DmnDecisionUpdateRequest {
 
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public String getUpdatedBy() {
-        return updatedBy;
-    }
-
-    public void setUpdatedBy(String updatedBy) {
-        this.updatedBy = updatedBy;
     }
 }

@@ -7,19 +7,17 @@ public class DmnDecisionRequest {
     private String hitPolicy;
     private String category;
     private String dmnXml;
-    private String createdBy;
 
     public DmnDecisionRequest() {
     }
 
-    public DmnDecisionRequest(String decisionKey, String name, String description, String hitPolicy, String category, String dmnXml, String createdBy) {
+    public DmnDecisionRequest(String decisionKey, String name, String description, String hitPolicy, String category, String dmnXml) {
         this.decisionKey = decisionKey;
         this.name = name;
         this.description = description;
         this.hitPolicy = hitPolicy;
         this.category = category;
         this.dmnXml = dmnXml;
-        this.createdBy = createdBy;
     }
 
     public String getDecisionKey() {
@@ -68,13 +66,5 @@ public class DmnDecisionRequest {
 
     public void setDmnXml(String dmnXml) {
         this.dmnXml = dmnXml;
-    }
-
-    public String getCreatedBy() {
-        return createdBy;
-    }
-
-    public void setCreatedBy(String createdBy) {
-        this.createdBy = createdBy;
     }
 }

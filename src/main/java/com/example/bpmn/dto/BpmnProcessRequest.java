@@ -6,18 +6,16 @@ public class BpmnProcessRequest {
     private String description;
     private String category;
     private String bpmnXml;
-    private String createdBy;
 
     public BpmnProcessRequest() {
     }
 
-    public BpmnProcessRequest(String processKey, String name, String description, String category, String bpmnXml, String createdBy) {
+    public BpmnProcessRequest(String processKey, String name, String description, String category, String bpmnXml) {
         this.processKey = processKey;
         this.name = name;
         this.description = description;
         this.category = category;
         this.bpmnXml = bpmnXml;
-        this.createdBy = createdBy;
     }
 
     public String getProcessKey() {
@@ -58,13 +56,5 @@ public class BpmnProcessRequest {
 
     public void setBpmnXml(String bpmnXml) {
         this.bpmnXml = bpmnXml;
-    }
-
-    public String getCreatedBy() {
-        return createdBy;
-    }
-
-    public void setCreatedBy(String createdBy) {
-        this.createdBy = createdBy;
     }
 }

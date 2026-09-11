@@ -184,6 +184,15 @@ public class DatabaseConfig {
                 created_at TIMESTAMP,
                 UNIQUE (decision_id, version)
             );
+
+            CREATE TABLE IF NOT EXISTS public.refresh_tokens (
+                id VARCHAR(100) PRIMARY KEY,
+                user_id VARCHAR(100) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                token_hash VARCHAR(255) NOT NULL UNIQUE,
+                expires_at TIMESTAMP NOT NULL,
+                revoked BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP NOT NULL
+            );
         """;
 
         try (Connection conn = getConnection();

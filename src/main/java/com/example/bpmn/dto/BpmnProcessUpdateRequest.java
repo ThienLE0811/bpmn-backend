@@ -9,7 +9,6 @@ public class BpmnProcessUpdateRequest {
     private String category;
     private String bpmnXml;
     private String status;
-    private String updatedBy;
 
     public BpmnProcessUpdateRequest() {
     }
@@ -52,13 +51,5 @@ public class BpmnProcessUpdateRequest {
 
     public void setStatus(String status) {
         this.status = status;
-    }
-
-    public String getUpdatedBy() {
-        return updatedBy;
-    }
-
-    public void setUpdatedBy(String updatedBy) {
-        this.updatedBy = updatedBy;
     }
 }

@@ -22,7 +22,7 @@ public class WorkflowController extends BaseController {
         get("/api/workflows/:id", ctx -> workflowService.getWorkflowById(ctx.param("id")));
         delete("/api/workflows/:id", ctx -> {
             String id = ctx.param("id");
-            workflowService.deleteWorkflow(id);
+            workflowService.deleteWorkflow(id, ctx.authRole());
             return Map.of("message", "Workflow deleted successfully", "id", id);
         });
     }

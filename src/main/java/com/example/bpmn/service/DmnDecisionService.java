@@ -10,7 +10,7 @@ public interface DmnDecisionService {
     List<DmnDecisionResponse> getAllDecisions();
     DmnDecisionResponse getDecisionById(String id);
     DmnDecisionResponse getDecisionByKey(String decisionKey);
-    DmnDecisionResponse createDecision(DmnDecisionRequest request);
-    DmnDecisionResponse updateDecision(String id, DmnDecisionUpdateRequest request);
-    void deleteDecision(String id);
+    DmnDecisionResponse createDecision(DmnDecisionRequest request, String requesterUsername);
+    DmnDecisionResponse updateDecision(String id, DmnDecisionUpdateRequest request, String requesterUsername, String requesterRole);
+    void deleteDecision(String id, String requesterUsername, String requesterRole);
 }
