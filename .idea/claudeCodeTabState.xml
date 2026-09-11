@@ -7,9 +7,9 @@
           <value>
             <TabSessionState>
               <option name="provider" value="claude" />
-              <option name="sessionId" value="fccd79e8-f725-453a-947d-03bc923e1c8a" />
+              <option name="sessionId" value="de3951ab-b058-4ca2-a449-3135ff3cd779" />
               <option name="cwd" value="D:\works\bpmn\code\backend" />
-              <option name="model" value="claude-opus-5[1m]" />
+              <option name="model" value="claude-sonnet-5[1m]" />
               <option name="permissionMode" value="bypassPermissions" />
             </TabSessionState>
           </value>

@@ -19,10 +19,35 @@ public class RequestContext {
     private final HttpExchange exchange;
     private final Map<String, String> pathParams;
     private Map<String, String> queryParams;
+    private String authUserId;
+    private String authUsername;
+    private String authRole;
 
     RequestContext(HttpExchange exchange, Map<String, String> pathParams) {
         this.exchange = exchange;
         this.pathParams = pathParams;
+    }
+
+    /** Populated by {@link BaseController} after successfully validating the request's JWT. */
+    void setAuth(String userId, String username, String role) {
+        this.authUserId = userId;
+        this.authUsername = username;
+        this.authRole = role;
+    }
+
+    /** ID of the authenticated user, or {@code null} on routes that don't require auth. */
+    public String authUserId() {
+        return authUserId;
+    }
+
+    /** Username of the authenticated user, or {@code null} on routes that don't require auth. */
+    public String authUsername() {
+        return authUsername;
+    }
+
+    /** Role of the authenticated user, or {@code null} on routes that don't require auth. */
+    public String authRole() {
+        return authRole;
     }
 
     /**

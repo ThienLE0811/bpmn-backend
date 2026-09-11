@@ -3,9 +3,11 @@ package com.example.bpmn.http;
 import com.example.bpmn.dto.ApiResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.util.JsonUtil;
+import com.example.bpmn.util.JwtUtil;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,29 +42,34 @@ public abstract class BaseController implements HttpHandler {
     private volatile String allowedMethods = "OPTIONS";
 
     protected void get(String pattern, RouteHandler handler) {
-        route("GET", pattern, handler);
+        route("GET", pattern, handler, true);
     }
 
     protected void post(String pattern, RouteHandler handler) {
-        route("POST", pattern, handler);
+        route("POST", pattern, handler, true);
     }
 
     protected void put(String pattern, RouteHandler handler) {
-        route("PUT", pattern, handler);
+        route("PUT", pattern, handler, true);
     }
 
     protected void patch(String pattern, RouteHandler handler) {
-        route("PATCH", pattern, handler);
+        route("PATCH", pattern, handler, true);
     }
 
     protected void delete(String pattern, RouteHandler handler) {
-        route("DELETE", pattern, handler);
+        route("DELETE", pattern, handler, true);
     }
 
-    protected void route(String method, String pattern, RouteHandler handler) {
-        routes.add(new Route(method, pattern, handler));
+    /** Registers a route that does not require a valid Authorization Bearer token, e.g. login. */
+    protected void postPublic(String pattern, RouteHandler handler) {
+        route("POST", pattern, handler, false);
+    }
+
+    protected void route(String method, String pattern, RouteHandler handler, boolean requiresAuth) {
+        routes.add(new Route(method, pattern, handler, requiresAuth));
         allowedMethods = buildAllowedMethods();
-        logger.debug("Route registered: {} {}", method, pattern);
+        logger.debug("Route registered: {} {} (auth={})", method, pattern, requiresAuth);
     }
 
     @Override
@@ -96,7 +103,13 @@ public abstract class BaseController implements HttpHandler {
                 if (!route.matchesMethod(method)) {
                     continue;
                 }
-                Object result = route.handler().handle(new RequestContext(exchange, pathParams));
+
+                RequestContext ctx = new RequestContext(exchange, pathParams);
+                if (route.requiresAuth() && !authenticate(exchange, ctx)) {
+                    return;
+                }
+
+                Object result = route.handler().handle(ctx);
                 sendResult(exchange, result);
                 return;
             }
@@ -112,6 +125,31 @@ public abstract class BaseController implements HttpHandler {
         } catch (Exception e) {
             logger.error("Internal Server Error", e);
             sendJsonResponse(exchange, 500, ApiResponse.fail("500", "Internal Server Error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Validates the "Authorization: Bearer &lt;token&gt;" header and, on success,
+     * populates {@code ctx} with the caller's identity.
+     *
+     * @return {@code true} when authenticated (caller should proceed); on
+     *         {@code false} a 401 response has already been sent.
+     */
+    private boolean authenticate(HttpExchange exchange, RequestContext ctx) throws IOException {
+        String header = exchange.getRequestHeaders().getFirst("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) {
+            sendJsonResponse(exchange, 401, ApiResponse.fail("401", "Missing or invalid Authorization header"));
+            return false;
+        }
+
+        String token = header.substring("Bearer ".length()).trim();
+        try {
+            Claims claims = JwtUtil.parseToken(token);
+            ctx.setAuth(claims.getSubject(), claims.get("username", String.class), claims.get("role", String.class));
+            return true;
+        } catch (IllegalArgumentException e) {
+            sendJsonResponse(exchange, 401, ApiResponse.fail("401", "Invalid or expired token"));
+            return false;
         }
     }
 

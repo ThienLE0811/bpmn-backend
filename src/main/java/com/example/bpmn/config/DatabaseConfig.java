@@ -106,9 +106,12 @@ public class DatabaseConfig {
                 full_name VARCHAR(255),
                 role VARCHAR(50),
                 status VARCHAR(50),
+                password_hash VARCHAR(255),
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             );
+
+            ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
 
             CREATE TABLE IF NOT EXISTS public.bpmn_processes (
                 id VARCHAR(100) PRIMARY KEY,
@@ -160,6 +163,26 @@ public class DatabaseConfig {
                 due_date TIMESTAMP,
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS public.bpmn_process_versions (
+                id VARCHAR(100) PRIMARY KEY,
+                process_id VARCHAR(100) NOT NULL REFERENCES public.bpmn_processes(id) ON DELETE CASCADE,
+                version INT NOT NULL,
+                bpmn_xml TEXT,
+                created_by VARCHAR(100),
+                created_at TIMESTAMP,
+                UNIQUE (process_id, version)
+            );
+
+            CREATE TABLE IF NOT EXISTS public.dmn_decision_versions (
+                id VARCHAR(100) PRIMARY KEY,
+                decision_id VARCHAR(100) NOT NULL REFERENCES public.dmn_decision(id) ON DELETE CASCADE,
+                version INT NOT NULL,
+                dmn_xml TEXT,
+                created_by VARCHAR(100),
+                created_at TIMESTAMP,
+                UNIQUE (decision_id, version)
             );
         """;
 

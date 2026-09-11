@@ -8,6 +8,7 @@ import com.example.bpmn.mapper.UserMapper;
 import com.example.bpmn.model.User;
 import com.example.bpmn.repository.UserRepository;
 import com.example.bpmn.service.UserService;
+import com.example.bpmn.util.PasswordUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,9 @@ public class UserServiceImpl implements UserService {
         if (request.getEmail() == null || request.getEmail().isBlank()) {
             throw new AppException("Email must not be empty", 400);
         }
+        if (request.getPassword() == null || request.getPassword().length() < 8) {
+            throw new AppException("Password must be at least 8 characters", 400);
+        }
         if (userRepository.findByUsername(request.getUsername()).isPresent()) {
             throw new AppException("Username already exists: " + request.getUsername(), 409);
         }
@@ -62,6 +66,7 @@ public class UserServiceImpl implements UserService {
         user.setFullName(request.getFullName());
         user.setRole(request.getRole());
         user.setStatus("ACTIVE");
+        user.setPasswordHash(PasswordUtil.hash(request.getPassword()));
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
 
@@ -94,6 +99,12 @@ public class UserServiceImpl implements UserService {
         }
         if (request.getStatus() != null) {
             existing.setStatus(request.getStatus());
+        }
+        if (request.getPassword() != null) {
+            if (request.getPassword().length() < 8) {
+                throw new AppException("Password must be at least 8 characters", 400);
+            }
+            existing.setPasswordHash(PasswordUtil.hash(request.getPassword()));
         }
         existing.setUpdatedAt(LocalDateTime.now());
 

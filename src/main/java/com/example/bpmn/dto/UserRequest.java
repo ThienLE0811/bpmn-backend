@@ -5,15 +5,17 @@ public class UserRequest {
     private String email;
     private String fullName;
     private String role;
+    private String password;
 
     public UserRequest() {
     }
 
-    public UserRequest(String username, String email, String fullName, String role) {
+    public UserRequest(String username, String email, String fullName, String role, String password) {
         this.username = username;
         this.email = email;
         this.fullName = fullName;
         this.role = role;
+        this.password = password;
     }
 
     public String getUsername() {
@@ -46,5 +48,13 @@ public class UserRequest {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
     }
 }

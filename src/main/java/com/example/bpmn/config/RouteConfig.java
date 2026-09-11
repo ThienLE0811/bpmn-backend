@@ -26,6 +26,7 @@ public class RouteConfig {
         logger.info("Registering API routes across modules...");
 
         registerHealthRoute(server);
+        registerAuthRoutes(server, container);
         registerWorkflowRoutes(server, container);
         registerBpmnRoutes(server, container);
         registerDmnRoutes(server, container);
@@ -50,6 +51,14 @@ public class RouteConfig {
             }
         });
         logger.info("  [Health] Registered: /health");
+    }
+
+    /**
+     * Auth Module Routes
+     */
+    private static void registerAuthRoutes(HttpServer server, AppContainer container) {
+        server.createContext("/api/auth", container.getAuthController());
+        logger.info("  [Auth] Registered: /api/auth");
     }
 
     /**

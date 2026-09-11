@@ -6,8 +6,11 @@ import com.example.bpmn.dto.DmnDecisionUpdateRequest;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.DmnDecisionMapper;
 import com.example.bpmn.model.DmnDecision;
+import com.example.bpmn.model.DmnDecisionVersion;
 import com.example.bpmn.repository.DmnDecisionRepository;
+import com.example.bpmn.repository.DmnDecisionVersionRepository;
 import com.example.bpmn.service.DmnDecisionService;
+import com.example.bpmn.util.XmlUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,9 +22,12 @@ import java.util.stream.Collectors;
 public class DmnDecisionServiceImpl implements DmnDecisionService {
     private static final Logger logger = LoggerFactory.getLogger(DmnDecisionServiceImpl.class);
     private final DmnDecisionRepository dmnDecisionRepository;
+    private final DmnDecisionVersionRepository dmnDecisionVersionRepository;
 
-    public DmnDecisionServiceImpl(DmnDecisionRepository dmnDecisionRepository) {
+    public DmnDecisionServiceImpl(DmnDecisionRepository dmnDecisionRepository,
+                                   DmnDecisionVersionRepository dmnDecisionVersionRepository) {
         this.dmnDecisionRepository = dmnDecisionRepository;
+        this.dmnDecisionVersionRepository = dmnDecisionVersionRepository;
     }
 
     @Override
@@ -73,6 +79,7 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
         decision.setUpdatedAt(now);
 
         DmnDecision saved = dmnDecisionRepository.save(decision);
+        saveVersionSnapshot(saved, saved.getCreatedBy());
         logger.info("Saved new DMN decision with ID: {}", saved.getId());
         return DmnDecisionMapper.toResponse(saved);
     }
@@ -97,7 +104,12 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
         if (request.getCategory() != null) {
             existing.setCategory(request.getCategory());
         }
+        boolean versionBumped = false;
         if (request.getDmnXml() != null) {
+            if (!XmlUtil.isEquivalent(existing.getDmnXml(), request.getDmnXml())) {
+                existing.setVersion(existing.getVersion() + 1);
+                versionBumped = true;
+            }
             existing.setDmnXml(request.getDmnXml());
         }
         if (request.getStatus() != null) {
@@ -109,8 +121,22 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
         existing.setUpdatedAt(LocalDateTime.now());
 
         DmnDecision saved = dmnDecisionRepository.save(existing);
+        if (versionBumped) {
+            saveVersionSnapshot(saved, saved.getUpdatedBy());
+        }
         logger.info("Updated DMN decision with ID: {}", saved.getId());
         return DmnDecisionMapper.toResponse(saved);
+    }
+
+    private void saveVersionSnapshot(DmnDecision decision, String createdBy) {
+        DmnDecisionVersion snapshot = new DmnDecisionVersion();
+        snapshot.setId(UUID.randomUUID().toString());
+        snapshot.setDecisionId(decision.getId());
+        snapshot.setVersion(decision.getVersion());
+        snapshot.setDmnXml(decision.getDmnXml());
+        snapshot.setCreatedBy(createdBy);
+        snapshot.setCreatedAt(LocalDateTime.now());
+        dmnDecisionVersionRepository.save(snapshot);
     }
 
     @Override

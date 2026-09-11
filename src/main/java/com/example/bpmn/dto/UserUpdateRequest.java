@@ -9,6 +9,7 @@ public class UserUpdateRequest {
     private String fullName;
     private String role;
     private String status;
+    private String password;
 
     public UserUpdateRequest() {
     }
@@ -43,5 +44,13 @@ public class UserUpdateRequest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
     }
 }

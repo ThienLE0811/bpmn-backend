@@ -16,12 +16,14 @@ class Route {
     private final String pattern;
     private final String[] patternSegments;
     private final RouteHandler handler;
+    private final boolean requiresAuth;
 
-    Route(String method, String pattern, RouteHandler handler) {
+    Route(String method, String pattern, RouteHandler handler, boolean requiresAuth) {
         this.method = method;
         this.pattern = pattern;
         this.patternSegments = split(pattern);
         this.handler = handler;
+        this.requiresAuth = requiresAuth;
     }
 
     /**
@@ -66,6 +68,10 @@ class Route {
 
     boolean matchesMethod(String requestMethod) {
         return method.equalsIgnoreCase(requestMethod);
+    }
+
+    boolean requiresAuth() {
+        return requiresAuth;
     }
 
     String method() {

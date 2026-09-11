@@ -2,6 +2,7 @@ package com.example.bpmn.controller;
 
 import com.example.bpmn.dto.BpmnProcessRequest;
 import com.example.bpmn.dto.BpmnProcessUpdateRequest;
+import com.example.bpmn.exception.AppException;
 import com.example.bpmn.http.BaseController;
 import com.example.bpmn.http.HttpResult;
 import com.example.bpmn.service.BpmnProcessService;
@@ -24,6 +25,15 @@ public class BpmnProcessController extends BaseController {
         get("/api/bpmn-processes/:id", ctx -> bpmnProcessService.getProcessById(ctx.param("id")));
         put("/api/bpmn-processes/:id", ctx -> bpmnProcessService.updateProcess(
                 ctx.param("id"), ctx.body(BpmnProcessUpdateRequest.class)));
+        get("/api/bpmn-processes/:id/versions", ctx -> bpmnProcessService.getVersionHistory(ctx.param("id")));
+        get("/api/bpmn-processes/:id/versions/:version", ctx -> {
+            String versionParam = ctx.param("version");
+            try {
+                return bpmnProcessService.getVersion(ctx.param("id"), Integer.parseInt(versionParam));
+            } catch (NumberFormatException e) {
+                throw new AppException("Invalid version number: " + versionParam, 400);
+            }
+        });
         delete("/api/bpmn-processes/:id", ctx -> {
             String id = ctx.param("id");
             bpmnProcessService.deleteProcess(id);

@@ -18,14 +18,15 @@ public class PostgresUserRepository implements UserRepository {
     @Override
     public User save(User user) {
         String sql = """
-            INSERT INTO users (id, username, email, full_name, role, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, username, email, full_name, role, status, password_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE
             SET username = EXCLUDED.username,
                 email = EXCLUDED.email,
                 full_name = EXCLUDED.full_name,
                 role = EXCLUDED.role,
                 status = EXCLUDED.status,
+                password_hash = EXCLUDED.password_hash,
                 updated_at = EXCLUDED.updated_at
         """;
 
@@ -38,8 +39,9 @@ public class PostgresUserRepository implements UserRepository {
             stmt.setString(4, user.getFullName());
             stmt.setString(5, user.getRole());
             stmt.setString(6, user.getStatus());
-            stmt.setTimestamp(7, user.getCreatedAt() != null ? Timestamp.valueOf(user.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
-            stmt.setTimestamp(8, user.getUpdatedAt() != null ? Timestamp.valueOf(user.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setString(7, user.getPasswordHash());
+            stmt.setTimestamp(8, user.getCreatedAt() != null ? Timestamp.valueOf(user.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setTimestamp(9, user.getUpdatedAt() != null ? Timestamp.valueOf(user.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
 
             stmt.executeUpdate();
             return user;
@@ -51,7 +53,7 @@ public class PostgresUserRepository implements UserRepository {
 
     @Override
     public Optional<User> findById(String id) {
-        String sql = "SELECT id, username, email, full_name, role, status, created_at, updated_at FROM users WHERE id = ?";
+        String sql = "SELECT id, username, email, full_name, role, status, password_hash, created_at, updated_at FROM users WHERE id = ?";
 
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -72,7 +74,7 @@ public class PostgresUserRepository implements UserRepository {
 
     @Override
     public Optional<User> findByUsername(String username) {
-        String sql = "SELECT id, username, email, full_name, role, status, created_at, updated_at FROM users WHERE username = ?";
+        String sql = "SELECT id, username, email, full_name, role, status, password_hash, created_at, updated_at FROM users WHERE username = ?";
 
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -93,7 +95,7 @@ public class PostgresUserRepository implements UserRepository {
 
     @Override
     public Optional<User> findByEmail(String email) {
-        String sql = "SELECT id, username, email, full_name, role, status, created_at, updated_at FROM users WHERE email = ?";
+        String sql = "SELECT id, username, email, full_name, role, status, password_hash, created_at, updated_at FROM users WHERE email = ?";
 
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -114,7 +116,7 @@ public class PostgresUserRepository implements UserRepository {
 
     @Override
     public List<User> findAll() {
-        String sql = "SELECT id, username, email, full_name, role, status, created_at, updated_at FROM users ORDER BY created_at DESC";
+        String sql = "SELECT id, username, email, full_name, role, status, password_hash, created_at, updated_at FROM users ORDER BY created_at DESC";
         List<User> list = new ArrayList<>();
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -154,6 +156,7 @@ public class PostgresUserRepository implements UserRepository {
         user.setFullName(rs.getString("full_name"));
         user.setRole(rs.getString("role"));
         user.setStatus(rs.getString("status"));
+        user.setPasswordHash(rs.getString("password_hash"));
 
         Timestamp createdAtTs = rs.getTimestamp("created_at");
         if (createdAtTs != null) {

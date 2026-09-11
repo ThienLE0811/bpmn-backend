@@ -9,6 +9,7 @@ public class User {
     private String fullName;
     private String role;
     private String status;
+    private String passwordHash;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -72,6 +73,14 @@ public class User {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 
     public LocalDateTime getCreatedAt() {
