@@ -31,6 +31,7 @@ public class RouteConfig {
         registerBpmnRoutes(server, container);
         registerDmnRoutes(server, container);
         registerUserRoutes(server, container);
+        registerProcessInstanceRoutes(server, container);
         registerTaskRoutes(server, container);
 
         logger.info("All API routes registered successfully.");
@@ -94,11 +95,18 @@ public class RouteConfig {
     }
 
     /**
-     * Task Module Routes (placeholder for Task endpoints)
+     * Process Instance ("case") Module Routes
+     */
+    private static void registerProcessInstanceRoutes(HttpServer server, AppContainer container) {
+        server.createContext("/api/process-instances", container.getProcessInstanceController());
+        logger.info("  [ProcessInstance] Registered: /api/process-instances");
+    }
+
+    /**
+     * Task Module Routes
      */
     private static void registerTaskRoutes(HttpServer server, AppContainer container) {
-        // Ví dụ sau này khi có TaskController:
-        // server.createContext("/api/tasks", container.getTaskController());
-        // logger.info("  [Task] Registered: /api/tasks");
+        server.createContext("/api/tasks", container.getTaskController());
+        logger.info("  [Task] Registered: /api/tasks");
     }
 }

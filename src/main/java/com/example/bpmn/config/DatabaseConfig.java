@@ -153,17 +153,44 @@ public class DatabaseConfig {
                 updated_at TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS public.process_instances (
+                id VARCHAR(100) PRIMARY KEY,
+                process_id VARCHAR(100) NOT NULL REFERENCES public.bpmn_processes(id),
+                process_version INT NOT NULL,
+                status VARCHAR(50) NOT NULL,
+                current_node_id VARCHAR(100),
+                variables TEXT,
+                started_by VARCHAR(100),
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS public.tasks (
                 id VARCHAR(100) PRIMARY KEY,
                 process_id VARCHAR(100),
+                process_instance_id VARCHAR(100) REFERENCES public.process_instances(id) ON DELETE CASCADE,
+                node_id VARCHAR(100),
                 name VARCHAR(255) NOT NULL,
                 description TEXT,
                 assignee_id VARCHAR(100),
                 status VARCHAR(50),
+                claimed_by VARCHAR(100),
+                claimed_at TIMESTAMP,
+                completed_by VARCHAR(100),
+                completed_at TIMESTAMP,
                 due_date TIMESTAMP,
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             );
+
+            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS process_instance_id VARCHAR(100) REFERENCES public.process_instances(id) ON DELETE CASCADE;
+            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS node_id VARCHAR(100);
+            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS claimed_by VARCHAR(100);
+            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP;
+            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_by VARCHAR(100);
+            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
 
             CREATE TABLE IF NOT EXISTS public.bpmn_process_versions (
                 id VARCHAR(100) PRIMARY KEY,

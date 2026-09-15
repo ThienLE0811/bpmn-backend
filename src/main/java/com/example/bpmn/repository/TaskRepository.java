@@ -9,6 +9,7 @@ public interface TaskRepository {
     Optional<Task> findById(String id);
     List<Task> findByProcessId(String processId);
     List<Task> findByAssigneeId(String assigneeId);
+    List<Task> findByProcessInstanceId(String processInstanceId);
     List<Task> findAll();
     boolean deleteById(String id);
 }

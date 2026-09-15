@@ -1,5 +1,6 @@
 package com.example.bpmn.service.impl;
 
+import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.dto.UserRequest;
 import com.example.bpmn.dto.UserResponse;
 import com.example.bpmn.dto.UserUpdateRequest;
@@ -26,11 +27,12 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public List<UserResponse> getAllUsers() {
-        logger.info("Fetching all users from database");
-        return userRepository.findAll().stream()
+    public PageResponse<UserResponse> getAllUsers(int page, int size) {
+        logger.info("Fetching users page {} (size {}) from database", page, size);
+        List<UserResponse> content = userRepository.findPage(size, (page - 1) * size).stream()
                 .map(UserMapper::toResponse)
                 .collect(Collectors.toList());
+        return new PageResponse<>(content, page, size, userRepository.count());
     }
 
     @Override

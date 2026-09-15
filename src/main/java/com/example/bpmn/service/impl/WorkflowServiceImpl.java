@@ -1,5 +1,6 @@
 package com.example.bpmn.service.impl;
 
+import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.dto.WorkflowRequest;
 import com.example.bpmn.dto.WorkflowResponse;
 import com.example.bpmn.exception.AppException;
@@ -53,10 +54,11 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
-    public List<WorkflowResponse> getAllWorkflows() {
-        return workflowRepository.findAll().stream()
+    public PageResponse<WorkflowResponse> getAllWorkflows(int page, int size) {
+        List<WorkflowResponse> content = workflowRepository.findPage(size, (page - 1) * size).stream()
                 .map(WorkflowMapper::toResponse)
                 .collect(Collectors.toList());
+        return new PageResponse<>(content, page, size, workflowRepository.count());
     }
 
     @Override

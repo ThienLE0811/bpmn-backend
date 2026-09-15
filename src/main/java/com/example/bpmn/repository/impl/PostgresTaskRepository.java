@@ -18,14 +18,22 @@ public class PostgresTaskRepository implements TaskRepository {
     @Override
     public Task save(Task task) {
         String sql = """
-            INSERT INTO tasks (id, process_id, name, description, assignee_id, status, due_date, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks
+                (id, process_id, process_instance_id, node_id, name, description, assignee_id, status,
+                 claimed_by, claimed_at, completed_by, completed_at, due_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE
             SET process_id = EXCLUDED.process_id,
+                process_instance_id = EXCLUDED.process_instance_id,
+                node_id = EXCLUDED.node_id,
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
                 assignee_id = EXCLUDED.assignee_id,
                 status = EXCLUDED.status,
+                claimed_by = EXCLUDED.claimed_by,
+                claimed_at = EXCLUDED.claimed_at,
+                completed_by = EXCLUDED.completed_by,
+                completed_at = EXCLUDED.completed_at,
                 due_date = EXCLUDED.due_date,
                 updated_at = EXCLUDED.updated_at
         """;
@@ -35,13 +43,19 @@ public class PostgresTaskRepository implements TaskRepository {
 
             stmt.setString(1, task.getId());
             stmt.setString(2, task.getProcessId());
-            stmt.setString(3, task.getName());
-            stmt.setString(4, task.getDescription());
-            stmt.setString(5, task.getAssigneeId());
-            stmt.setString(6, task.getStatus());
-            stmt.setTimestamp(7, task.getDueDate() != null ? Timestamp.valueOf(task.getDueDate()) : null);
-            stmt.setTimestamp(8, task.getCreatedAt() != null ? Timestamp.valueOf(task.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
-            stmt.setTimestamp(9, task.getUpdatedAt() != null ? Timestamp.valueOf(task.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setString(3, task.getProcessInstanceId());
+            stmt.setString(4, task.getNodeId());
+            stmt.setString(5, task.getName());
+            stmt.setString(6, task.getDescription());
+            stmt.setString(7, task.getAssigneeId());
+            stmt.setString(8, task.getStatus());
+            stmt.setString(9, task.getClaimedBy());
+            stmt.setTimestamp(10, task.getClaimedAt() != null ? Timestamp.valueOf(task.getClaimedAt()) : null);
+            stmt.setString(11, task.getCompletedBy());
+            stmt.setTimestamp(12, task.getCompletedAt() != null ? Timestamp.valueOf(task.getCompletedAt()) : null);
+            stmt.setTimestamp(13, task.getDueDate() != null ? Timestamp.valueOf(task.getDueDate()) : null);
+            stmt.setTimestamp(14, task.getCreatedAt() != null ? Timestamp.valueOf(task.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setTimestamp(15, task.getUpdatedAt() != null ? Timestamp.valueOf(task.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
 
             stmt.executeUpdate();
             return task;
@@ -53,7 +67,7 @@ public class PostgresTaskRepository implements TaskRepository {
 
     @Override
     public Optional<Task> findById(String id) {
-        String sql = "SELECT id, process_id, name, description, assignee_id, status, due_date, created_at, updated_at FROM tasks WHERE id = ?";
+        String sql = "SELECT * FROM tasks WHERE id = ?";
 
         try (Connection conn = DatabaseConfig.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -74,7 +88,7 @@ public class PostgresTaskRepository implements TaskRepository {
 
     @Override
     public List<Task> findByProcessId(String processId) {
-        String sql = "SELECT id, process_id, name, description, assignee_id, status, due_date, created_at, updated_at FROM tasks WHERE process_id = ? ORDER BY created_at ASC";
+        String sql = "SELECT * FROM tasks WHERE process_id = ? ORDER BY created_at ASC";
         List<Task> list = new ArrayList<>();
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -96,7 +110,7 @@ public class PostgresTaskRepository implements TaskRepository {
 
     @Override
     public List<Task> findByAssigneeId(String assigneeId) {
-        String sql = "SELECT id, process_id, name, description, assignee_id, status, due_date, created_at, updated_at FROM tasks WHERE assignee_id = ? ORDER BY created_at ASC";
+        String sql = "SELECT * FROM tasks WHERE assignee_id = ? ORDER BY created_at ASC";
         List<Task> list = new ArrayList<>();
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -117,8 +131,30 @@ public class PostgresTaskRepository implements TaskRepository {
     }
 
     @Override
+    public List<Task> findByProcessInstanceId(String processInstanceId) {
+        String sql = "SELECT * FROM tasks WHERE process_instance_id = ? ORDER BY created_at ASC";
+        List<Task> list = new ArrayList<>();
+
+        try (Connection conn = DatabaseConfig.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, processInstanceId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToTask(rs));
+                }
+            }
+            return list;
+        } catch (SQLException e) {
+            logger.error("Failed to fetch tasks by processInstanceId={}: {}", processInstanceId, e.getMessage(), e);
+            throw new RuntimeException("Database error fetching tasks by processInstanceId", e);
+        }
+    }
+
+    @Override
     public List<Task> findAll() {
-        String sql = "SELECT id, process_id, name, description, assignee_id, status, due_date, created_at, updated_at FROM tasks ORDER BY created_at DESC";
+        String sql = "SELECT * FROM tasks ORDER BY created_at DESC";
         List<Task> list = new ArrayList<>();
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -158,6 +194,20 @@ public class PostgresTaskRepository implements TaskRepository {
         task.setDescription(rs.getString("description"));
         task.setAssigneeId(rs.getString("assignee_id"));
         task.setStatus(rs.getString("status"));
+        task.setProcessInstanceId(rs.getString("process_instance_id"));
+        task.setNodeId(rs.getString("node_id"));
+        task.setClaimedBy(rs.getString("claimed_by"));
+        task.setCompletedBy(rs.getString("completed_by"));
+
+        Timestamp claimedAtTs = rs.getTimestamp("claimed_at");
+        if (claimedAtTs != null) {
+            task.setClaimedAt(claimedAtTs.toLocalDateTime());
+        }
+
+        Timestamp completedAtTs = rs.getTimestamp("completed_at");
+        if (completedAtTs != null) {
+            task.setCompletedAt(completedAtTs.toLocalDateTime());
+        }
 
         Timestamp dueDateTs = rs.getTimestamp("due_date");
         if (dueDateTs != null) {

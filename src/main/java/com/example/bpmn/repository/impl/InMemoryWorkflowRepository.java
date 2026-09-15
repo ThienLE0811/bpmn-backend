@@ -29,6 +29,19 @@ public class InMemoryWorkflowRepository implements WorkflowRepository {
     }
 
     @Override
+    public List<Workflow> findPage(int limit, int offset) {
+        List<Workflow> all = findAll();
+        int fromIndex = Math.min(offset, all.size());
+        int toIndex = Math.min(offset + limit, all.size());
+        return new ArrayList<>(all.subList(fromIndex, toIndex));
+    }
+
+    @Override
+    public long count() {
+        return storage.size();
+    }
+
+    @Override
     public boolean deleteById(String id) {
         return storage.remove(id) != null;
     }

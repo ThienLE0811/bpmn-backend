@@ -1,36 +1,41 @@
-package com.example.bpmn.model;
+package com.example.bpmn.dto;
 
 import java.time.LocalDateTime;
 
-public class Task {
+public class TaskResponse {
     private String id;
-    private String processId;
     private String processInstanceId;
     private String nodeId;
     private String name;
     private String description;
-    private String assigneeId;
     private String status;
+    private String assigneeId;
     private String claimedBy;
     private LocalDateTime claimedAt;
     private String completedBy;
     private LocalDateTime completedAt;
-    private LocalDateTime dueDate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    public Task() {
+    public TaskResponse() {
     }
 
-    public Task(String id, String processId, String name, String description, String assigneeId, String status) {
+    public TaskResponse(String id, String processInstanceId, String nodeId, String name, String description,
+                         String status, String assigneeId, String claimedBy, LocalDateTime claimedAt,
+                         String completedBy, LocalDateTime completedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
-        this.processId = processId;
+        this.processInstanceId = processInstanceId;
+        this.nodeId = nodeId;
         this.name = name;
         this.description = description;
-        this.assigneeId = assigneeId;
         this.status = status;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.assigneeId = assigneeId;
+        this.claimedBy = claimedBy;
+        this.claimedAt = claimedAt;
+        this.completedBy = completedBy;
+        this.completedAt = completedAt;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     public String getId() {
@@ -41,12 +46,20 @@ public class Task {
         this.id = id;
     }
 
-    public String getProcessId() {
-        return processId;
+    public String getProcessInstanceId() {
+        return processInstanceId;
     }
 
-    public void setProcessId(String processId) {
-        this.processId = processId;
+    public void setProcessInstanceId(String processInstanceId) {
+        this.processInstanceId = processInstanceId;
+    }
+
+    public String getNodeId() {
+        return nodeId;
+    }
+
+    public void setNodeId(String nodeId) {
+        this.nodeId = nodeId;
     }
 
     public String getName() {
@@ -65,14 +78,6 @@ public class Task {
         this.description = description;
     }
 
-    public String getAssigneeId() {
-        return assigneeId;
-    }
-
-    public void setAssigneeId(String assigneeId) {
-        this.assigneeId = assigneeId;
-    }
-
     public String getStatus() {
         return status;
     }
@@ -81,20 +86,12 @@ public class Task {
         this.status = status;
     }
 
-    public String getProcessInstanceId() {
-        return processInstanceId;
+    public String getAssigneeId() {
+        return assigneeId;
     }
 
-    public void setProcessInstanceId(String processInstanceId) {
-        this.processInstanceId = processInstanceId;
-    }
-
-    public String getNodeId() {
-        return nodeId;
-    }
-
-    public void setNodeId(String nodeId) {
-        this.nodeId = nodeId;
+    public void setAssigneeId(String assigneeId) {
+        this.assigneeId = assigneeId;
     }
 
     public String getClaimedBy() {
@@ -127,14 +124,6 @@ public class Task {
 
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
-    }
-
-    public LocalDateTime getDueDate() {
-        return dueDate;
-    }
-
-    public void setDueDate(LocalDateTime dueDate) {
-        this.dueDate = dueDate;
     }
 
     public LocalDateTime getCreatedAt() {

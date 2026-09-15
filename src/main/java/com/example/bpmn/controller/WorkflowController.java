@@ -16,7 +16,7 @@ public class WorkflowController extends BaseController {
     public WorkflowController(WorkflowService workflowService) {
         this.workflowService = workflowService;
 
-        get("/api/workflows", ctx -> workflowService.getAllWorkflows());
+        get("/api/workflows", ctx -> workflowService.getAllWorkflows(ctx.pageParam(), ctx.sizeParam()));
         post("/api/workflows", ctx -> HttpResult.created(
                 workflowService.createWorkflow(ctx.body(WorkflowRequest.class))));
         get("/api/workflows/:id", ctx -> workflowService.getWorkflowById(ctx.param("id")));

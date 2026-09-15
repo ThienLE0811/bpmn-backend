@@ -9,5 +9,7 @@ public interface DmnDecisionRepository {
     Optional<DmnDecision> findById(String id);
     Optional<DmnDecision> findByDecisionKey(String decisionKey);
     List<DmnDecision> findAll();
+    List<DmnDecision> findPage(int limit, int offset);
+    long count();
     boolean deleteById(String id);
 }

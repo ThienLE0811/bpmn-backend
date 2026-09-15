@@ -86,6 +86,45 @@ public class PostgresWorkflowRepository implements WorkflowRepository {
     }
 
     @Override
+    public List<Workflow> findPage(int limit, int offset) {
+        String sql = "SELECT id, name, description, status, created_at, updated_at FROM workflows " +
+                "ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        List<Workflow> list = new ArrayList<>();
+
+        try (Connection conn = DatabaseConfig.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, limit);
+            stmt.setInt(2, offset);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToWorkflow(rs));
+                }
+            }
+            return list;
+        } catch (SQLException e) {
+            logger.error("Failed to fetch workflows page: {}", e.getMessage(), e);
+            throw new RuntimeException("Database error fetching workflows page", e);
+        }
+    }
+
+    @Override
+    public long count() {
+        String sql = "SELECT COUNT(*) FROM workflows";
+
+        try (Connection conn = DatabaseConfig.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            return rs.next() ? rs.getLong(1) : 0;
+        } catch (SQLException e) {
+            logger.error("Failed to count workflows: {}", e.getMessage(), e);
+            throw new RuntimeException("Database error counting workflows", e);
+        }
+    }
+
+    @Override
     public boolean deleteById(String id) {
         String sql = "DELETE FROM workflows WHERE id = ?";
 

@@ -53,6 +53,19 @@ class DmnDecisionServiceTest {
             }
 
             @Override
+            public List<DmnDecision> findPage(int limit, int offset) {
+                List<DmnDecision> all = findAll();
+                int from = Math.min(offset, all.size());
+                int to = Math.min(offset + limit, all.size());
+                return new ArrayList<>(all.subList(from, to));
+            }
+
+            @Override
+            public long count() {
+                return storage.size();
+            }
+
+            @Override
             public boolean deleteById(String id) {
                 return storage.remove(id) != null;
             }
@@ -93,7 +106,7 @@ class DmnDecisionServiceTest {
         storage.put("1", d1);
         storage.put("2", d2);
 
-        List<DmnDecisionResponse> result = dmnDecisionService.getAllDecisions();
+        List<DmnDecisionResponse> result = dmnDecisionService.getAllDecisions(1, 20).getContent();
 
         assertEquals(2, result.size());
         assertEquals("UNIQUE", result.get(0).getHitPolicy());

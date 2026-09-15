@@ -72,6 +72,28 @@ public class RequestContext {
         return value != null ? value : defaultValue;
     }
 
+    /** 1-based page number from "?page=", clamped to at least 1 (defaults to 1). */
+    public int pageParam() {
+        return Math.max(1, parseIntOrDefault(query("page"), 1));
+    }
+
+    /** Page size from "?size=", clamped to [1, 100] (defaults to 20). */
+    public int sizeParam() {
+        int size = parseIntOrDefault(query("size"), 20);
+        return Math.min(100, Math.max(1, size));
+    }
+
+    private static int parseIntOrDefault(String value, int defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
     /** Parse the JSON request body into the given type. */
     public <T> T body(Class<T> type) {
         String raw = rawBody();

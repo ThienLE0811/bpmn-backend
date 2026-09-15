@@ -62,7 +62,7 @@ class WorkflowServiceTest {
         workflowService.createWorkflow(new WorkflowRequest("WF_1", "Desc 1"));
         workflowService.createWorkflow(new WorkflowRequest("WF_2", "Desc 2"));
 
-        List<WorkflowResponse> list = workflowService.getAllWorkflows();
+        List<WorkflowResponse> list = workflowService.getAllWorkflows(1, 20).getContent();
         assertEquals(2, list.size());
     }
 }

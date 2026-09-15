@@ -17,7 +17,7 @@ public class DmnDecisionController extends BaseController {
     public DmnDecisionController(DmnDecisionService dmnDecisionService) {
         this.dmnDecisionService = dmnDecisionService;
 
-        get("/api/dmn-decisions", ctx -> dmnDecisionService.getAllDecisions());
+        get("/api/dmn-decisions", ctx -> dmnDecisionService.getAllDecisions(ctx.pageParam(), ctx.sizeParam()));
         post("/api/dmn-decisions", ctx -> HttpResult.created(
                 dmnDecisionService.createDecision(ctx.body(DmnDecisionRequest.class), ctx.authUsername())));
         get("/api/dmn-decisions/key/:key", ctx -> dmnDecisionService.getDecisionByKey(ctx.param("key")));

@@ -9,5 +9,7 @@ public interface BpmnProcessRepository {
     Optional<BpmnProcess> findById(String id);
     Optional<BpmnProcess> findByProcessKey(String processKey);
     List<BpmnProcess> findAll();
+    List<BpmnProcess> findPage(int limit, int offset);
+    long count();
     boolean deleteById(String id);
 }

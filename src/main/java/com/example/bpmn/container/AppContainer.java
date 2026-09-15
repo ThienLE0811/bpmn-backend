@@ -3,30 +3,40 @@ package com.example.bpmn.container;
 import com.example.bpmn.controller.AuthController;
 import com.example.bpmn.controller.BpmnProcessController;
 import com.example.bpmn.controller.DmnDecisionController;
+import com.example.bpmn.controller.ProcessInstanceController;
+import com.example.bpmn.controller.TaskController;
 import com.example.bpmn.controller.UserController;
 import com.example.bpmn.controller.WorkflowController;
 import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.DmnDecisionRepository;
 import com.example.bpmn.repository.DmnDecisionVersionRepository;
+import com.example.bpmn.repository.ProcessInstanceRepository;
 import com.example.bpmn.repository.RefreshTokenRepository;
+import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.repository.UserRepository;
 import com.example.bpmn.repository.WorkflowRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessVersionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionVersionRepository;
+import com.example.bpmn.repository.impl.PostgresProcessInstanceRepository;
 import com.example.bpmn.repository.impl.PostgresRefreshTokenRepository;
+import com.example.bpmn.repository.impl.PostgresTaskRepository;
 import com.example.bpmn.repository.impl.PostgresUserRepository;
 import com.example.bpmn.repository.impl.PostgresWorkflowRepository;
 import com.example.bpmn.service.AuthService;
 import com.example.bpmn.service.BpmnProcessService;
 import com.example.bpmn.service.DmnDecisionService;
+import com.example.bpmn.service.ProcessInstanceService;
+import com.example.bpmn.service.TaskService;
 import com.example.bpmn.service.UserService;
 import com.example.bpmn.service.WorkflowService;
 import com.example.bpmn.service.impl.AuthServiceImpl;
 import com.example.bpmn.service.impl.BpmnProcessServiceImpl;
 import com.example.bpmn.service.impl.DmnDecisionServiceImpl;
+import com.example.bpmn.service.impl.ProcessInstanceServiceImpl;
+import com.example.bpmn.service.impl.TaskServiceImpl;
 import com.example.bpmn.service.impl.UserServiceImpl;
 import com.example.bpmn.service.impl.WorkflowServiceImpl;
 
@@ -43,6 +53,8 @@ public class AppContainer {
     private final DmnDecisionVersionRepository dmnDecisionVersionRepository;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final ProcessInstanceRepository processInstanceRepository;
+    private final TaskRepository taskRepository;
 
     // Services
     private final WorkflowService workflowService;
@@ -50,6 +62,8 @@ public class AppContainer {
     private final DmnDecisionService dmnDecisionService;
     private final UserService userService;
     private final AuthService authService;
+    private final ProcessInstanceService processInstanceService;
+    private final TaskService taskService;
 
     // Controllers
     private final WorkflowController workflowController;
@@ -57,6 +71,8 @@ public class AppContainer {
     private final DmnDecisionController dmnDecisionController;
     private final UserController userController;
     private final AuthController authController;
+    private final ProcessInstanceController processInstanceController;
+    private final TaskController taskController;
 
     public AppContainer() {
         // 1. Repositories initialization
@@ -67,6 +83,8 @@ public class AppContainer {
         this.dmnDecisionVersionRepository = new PostgresDmnDecisionVersionRepository();
         this.userRepository = new PostgresUserRepository();
         this.refreshTokenRepository = new PostgresRefreshTokenRepository();
+        this.processInstanceRepository = new PostgresProcessInstanceRepository();
+        this.taskRepository = new PostgresTaskRepository();
 
         // 2. Services initialization
         this.workflowService = new WorkflowServiceImpl(this.workflowRepository);
@@ -74,6 +92,8 @@ public class AppContainer {
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
         this.authService = new AuthServiceImpl(this.userRepository, this.refreshTokenRepository);
+        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository);
+        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository);
 
         // 3. Controllers initialization
         this.workflowController = new WorkflowController(this.workflowService);
@@ -81,6 +101,8 @@ public class AppContainer {
         this.dmnDecisionController = new DmnDecisionController(this.dmnDecisionService);
         this.userController = new UserController(this.userService);
         this.authController = new AuthController(this.authService);
+        this.processInstanceController = new ProcessInstanceController(this.processInstanceService);
+        this.taskController = new TaskController(this.taskService);
     }
 
     public WorkflowController getWorkflowController() {
@@ -103,6 +125,14 @@ public class AppContainer {
         return authController;
     }
 
+    public ProcessInstanceController getProcessInstanceController() {
+        return processInstanceController;
+    }
+
+    public TaskController getTaskController() {
+        return taskController;
+    }
+
     public WorkflowService getWorkflowService() {
         return workflowService;
     }
@@ -121,6 +151,14 @@ public class AppContainer {
 
     public AuthService getAuthService() {
         return authService;
+    }
+
+    public ProcessInstanceService getProcessInstanceService() {
+        return processInstanceService;
+    }
+
+    public TaskService getTaskService() {
+        return taskService;
     }
 
     public WorkflowRepository getWorkflowRepository() {
@@ -149,5 +187,13 @@ public class AppContainer {
 
     public RefreshTokenRepository getRefreshTokenRepository() {
         return refreshTokenRepository;
+    }
+
+    public ProcessInstanceRepository getProcessInstanceRepository() {
+        return processInstanceRepository;
+    }
+
+    public TaskRepository getTaskRepository() {
+        return taskRepository;
     }
 }

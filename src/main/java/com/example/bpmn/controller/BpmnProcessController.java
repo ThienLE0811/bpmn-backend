@@ -18,7 +18,7 @@ public class BpmnProcessController extends BaseController {
     public BpmnProcessController(BpmnProcessService bpmnProcessService) {
         this.bpmnProcessService = bpmnProcessService;
 
-        get("/api/bpmn-processes", ctx -> bpmnProcessService.getAllProcesses());
+        get("/api/bpmn-processes", ctx -> bpmnProcessService.getAllProcesses(ctx.pageParam(), ctx.sizeParam()));
         post("/api/bpmn-processes", ctx -> HttpResult.created(
                 bpmnProcessService.createProcess(ctx.body(BpmnProcessRequest.class), ctx.authUsername())));
         get("/api/bpmn-processes/key/:key", ctx -> bpmnProcessService.getProcessByKey(ctx.param("key")));

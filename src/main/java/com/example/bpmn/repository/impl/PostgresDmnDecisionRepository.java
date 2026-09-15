@@ -124,6 +124,44 @@ public class PostgresDmnDecisionRepository implements DmnDecisionRepository {
     }
 
     @Override
+    public List<DmnDecision> findPage(int limit, int offset) {
+        String sql = "SELECT * FROM dmn_decision ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        List<DmnDecision> list = new ArrayList<>();
+
+        try (Connection conn = DatabaseConfig.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, limit);
+            stmt.setInt(2, offset);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToDecision(rs));
+                }
+            }
+            return list;
+        } catch (SQLException e) {
+            logger.error("Failed to fetch dmn_decisions page: {}", e.getMessage(), e);
+            throw new RuntimeException("Database error fetching dmn_decisions page", e);
+        }
+    }
+
+    @Override
+    public long count() {
+        String sql = "SELECT COUNT(*) FROM dmn_decision";
+
+        try (Connection conn = DatabaseConfig.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            return rs.next() ? rs.getLong(1) : 0;
+        } catch (SQLException e) {
+            logger.error("Failed to count dmn_decisions: {}", e.getMessage(), e);
+            throw new RuntimeException("Database error counting dmn_decisions", e);
+        }
+    }
+
+    @Override
     public boolean deleteById(String id) {
         String sql = "DELETE FROM dmn_decision WHERE id = ?";
 

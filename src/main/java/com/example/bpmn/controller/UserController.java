@@ -17,7 +17,7 @@ public class UserController extends BaseController {
     public UserController(UserService userService) {
         this.userService = userService;
 
-        get("/api/users", ctx -> userService.getAllUsers());
+        get("/api/users", ctx -> userService.getAllUsers(ctx.pageParam(), ctx.sizeParam()));
         post("/api/users", ctx -> HttpResult.created(
                 userService.createUser(ctx.body(UserRequest.class), ctx.authRole())));
         get("/api/users/:id", ctx -> userService.getUserById(ctx.param("id")));

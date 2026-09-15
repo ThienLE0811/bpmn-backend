@@ -4,6 +4,7 @@ import com.example.bpmn.dto.BpmnProcessRequest;
 import com.example.bpmn.dto.BpmnProcessResponse;
 import com.example.bpmn.dto.BpmnProcessUpdateRequest;
 import com.example.bpmn.dto.BpmnProcessVersionResponse;
+import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.BpmnProcessMapper;
 import com.example.bpmn.mapper.BpmnProcessVersionMapper;
@@ -33,11 +34,12 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     }
 
     @Override
-    public List<BpmnProcessResponse> getAllProcesses() {
-        logger.info("Fetching all BPMN processes from database");
-        return bpmnProcessRepository.findAll().stream()
+    public PageResponse<BpmnProcessResponse> getAllProcesses(int page, int size) {
+        logger.info("Fetching BPMN processes page {} (size {}) from database", page, size);
+        List<BpmnProcessResponse> content = bpmnProcessRepository.findPage(size, (page - 1) * size).stream()
                 .map(BpmnProcessMapper::toResponse)
                 .collect(Collectors.toList());
+        return new PageResponse<>(content, page, size, bpmnProcessRepository.count());
     }
 
     @Override

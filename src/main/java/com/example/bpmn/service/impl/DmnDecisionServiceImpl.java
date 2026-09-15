@@ -3,6 +3,7 @@ package com.example.bpmn.service.impl;
 import com.example.bpmn.dto.DmnDecisionRequest;
 import com.example.bpmn.dto.DmnDecisionResponse;
 import com.example.bpmn.dto.DmnDecisionUpdateRequest;
+import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.DmnDecisionMapper;
 import com.example.bpmn.model.DmnDecision;
@@ -31,11 +32,12 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
     }
 
     @Override
-    public List<DmnDecisionResponse> getAllDecisions() {
-        logger.info("Fetching all DMN decisions from database");
-        return dmnDecisionRepository.findAll().stream()
+    public PageResponse<DmnDecisionResponse> getAllDecisions(int page, int size) {
+        logger.info("Fetching DMN decisions page {} (size {}) from database", page, size);
+        List<DmnDecisionResponse> content = dmnDecisionRepository.findPage(size, (page - 1) * size).stream()
                 .map(DmnDecisionMapper::toResponse)
                 .collect(Collectors.toList());
+        return new PageResponse<>(content, page, size, dmnDecisionRepository.count());
     }
 
     @Override

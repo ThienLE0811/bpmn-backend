@@ -50,6 +50,19 @@ class BpmnProcessServiceTest {
             }
 
             @Override
+            public List<BpmnProcess> findPage(int limit, int offset) {
+                List<BpmnProcess> all = findAll();
+                int from = Math.min(offset, all.size());
+                int to = Math.min(offset + limit, all.size());
+                return new ArrayList<>(all.subList(from, to));
+            }
+
+            @Override
+            public long count() {
+                return storage.size();
+            }
+
+            @Override
             public boolean deleteById(String id) {
                 return storage.remove(id) != null;
             }
@@ -90,7 +103,7 @@ class BpmnProcessServiceTest {
         storage.put("1", p1);
         storage.put("2", p2);
 
-        List<BpmnProcessResponse> result = bpmnProcessService.getAllProcesses();
+        List<BpmnProcessResponse> result = bpmnProcessService.getAllProcesses(1, 20).getContent();
 
         assertEquals(2, result.size());
     }

@@ -4,11 +4,12 @@ import com.example.bpmn.dto.BpmnProcessRequest;
 import com.example.bpmn.dto.BpmnProcessResponse;
 import com.example.bpmn.dto.BpmnProcessUpdateRequest;
 import com.example.bpmn.dto.BpmnProcessVersionResponse;
+import com.example.bpmn.dto.PageResponse;
 
 import java.util.List;
 
 public interface BpmnProcessService {
-    List<BpmnProcessResponse> getAllProcesses();
+    PageResponse<BpmnProcessResponse> getAllProcesses(int page, int size);
     BpmnProcessResponse getProcessById(String id);
     BpmnProcessResponse getProcessByKey(String processKey);
     BpmnProcessResponse createProcess(BpmnProcessRequest request, String requesterUsername);
