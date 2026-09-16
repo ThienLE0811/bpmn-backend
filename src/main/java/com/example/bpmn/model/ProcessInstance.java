@@ -2,6 +2,7 @@ package com.example.bpmn.model;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Set;
 
 public class ProcessInstance {
     private String id;
@@ -10,6 +11,7 @@ public class ProcessInstance {
     private String status;
     private String currentNodeId;
     private Map<String, Object> variables;
+    private Set<String> pendingJoinArrivals;
     private String startedBy;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
@@ -65,6 +67,15 @@ public class ProcessInstance {
 
     public void setVariables(Map<String, Object> variables) {
         this.variables = variables;
+    }
+
+    /** Sequence-flow ids that have arrived at a not-yet-satisfied parallel join gateway. See {@link com.example.bpmn.engine.ProcessEngine}. */
+    public Set<String> getPendingJoinArrivals() {
+        return pendingJoinArrivals;
+    }
+
+    public void setPendingJoinArrivals(Set<String> pendingJoinArrivals) {
+        this.pendingJoinArrivals = pendingJoinArrivals;
     }
 
     public String getStartedBy() {

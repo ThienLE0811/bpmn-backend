@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class PostgresProcessInstanceRepository implements ProcessInstanceRepository {
     private static final Logger logger = LoggerFactory.getLogger(PostgresProcessInstanceRepository.class);
@@ -25,12 +26,13 @@ public class PostgresProcessInstanceRepository implements ProcessInstanceReposit
     public ProcessInstance save(ProcessInstance instance) {
         String sql = """
             INSERT INTO process_instances
-                (id, process_id, process_version, status, current_node_id, variables, started_by, started_at, completed_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, process_id, process_version, status, current_node_id, variables, pending_join_arrivals, started_by, started_at, completed_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE
             SET status = EXCLUDED.status,
                 current_node_id = EXCLUDED.current_node_id,
                 variables = EXCLUDED.variables,
+                pending_join_arrivals = EXCLUDED.pending_join_arrivals,
                 completed_at = EXCLUDED.completed_at,
                 updated_at = EXCLUDED.updated_at
         """;
@@ -44,11 +46,12 @@ public class PostgresProcessInstanceRepository implements ProcessInstanceReposit
             stmt.setString(4, instance.getStatus());
             stmt.setString(5, instance.getCurrentNodeId());
             stmt.setString(6, instance.getVariables() != null ? JsonUtil.toJson(instance.getVariables()) : null);
-            stmt.setString(7, instance.getStartedBy());
-            stmt.setTimestamp(8, instance.getStartedAt() != null ? Timestamp.valueOf(instance.getStartedAt()) : null);
-            stmt.setTimestamp(9, instance.getCompletedAt() != null ? Timestamp.valueOf(instance.getCompletedAt()) : null);
-            stmt.setTimestamp(10, instance.getCreatedAt() != null ? Timestamp.valueOf(instance.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
-            stmt.setTimestamp(11, instance.getUpdatedAt() != null ? Timestamp.valueOf(instance.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setString(7, instance.getPendingJoinArrivals() != null ? JsonUtil.toJson(instance.getPendingJoinArrivals()) : null);
+            stmt.setString(8, instance.getStartedBy());
+            stmt.setTimestamp(9, instance.getStartedAt() != null ? Timestamp.valueOf(instance.getStartedAt()) : null);
+            stmt.setTimestamp(10, instance.getCompletedAt() != null ? Timestamp.valueOf(instance.getCompletedAt()) : null);
+            stmt.setTimestamp(11, instance.getCreatedAt() != null ? Timestamp.valueOf(instance.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setTimestamp(12, instance.getUpdatedAt() != null ? Timestamp.valueOf(instance.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
 
             stmt.executeUpdate();
             return instance;
@@ -161,6 +164,10 @@ public class PostgresProcessInstanceRepository implements ProcessInstanceReposit
 
         String variablesJson = rs.getString("variables");
         instance.setVariables(variablesJson != null ? JsonUtil.fromJson(variablesJson, Map.class) : Map.of());
+
+        String pendingJoinArrivalsJson = rs.getString("pending_join_arrivals");
+        instance.setPendingJoinArrivals(pendingJoinArrivalsJson != null
+                ? JsonUtil.fromJson(pendingJoinArrivalsJson, Set.class) : Set.of());
 
         instance.setStartedBy(rs.getString("started_by"));
 

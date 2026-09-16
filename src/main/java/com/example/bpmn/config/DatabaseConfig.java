@@ -160,12 +160,15 @@ public class DatabaseConfig {
                 status VARCHAR(50) NOT NULL,
                 current_node_id VARCHAR(100),
                 variables TEXT,
+                pending_join_arrivals TEXT,
                 started_by VARCHAR(100),
                 started_at TIMESTAMP,
                 completed_at TIMESTAMP,
                 created_at TIMESTAMP,
                 updated_at TIMESTAMP
             );
+
+            ALTER TABLE public.process_instances ADD COLUMN IF NOT EXISTS pending_join_arrivals TEXT;
 
             CREATE TABLE IF NOT EXISTS public.tasks (
                 id VARCHAR(100) PRIMARY KEY,

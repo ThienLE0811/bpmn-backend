@@ -15,6 +15,7 @@ import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
 import com.example.bpmn.repository.TaskRepository;
+import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.TaskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -31,13 +33,16 @@ public class TaskServiceImpl implements TaskService {
     private final TaskRepository taskRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final BpmnProcessVersionRepository bpmnProcessVersionRepository;
+    private final DmnDecisionService dmnDecisionService;
 
     public TaskServiceImpl(TaskRepository taskRepository,
                             ProcessInstanceRepository processInstanceRepository,
-                            BpmnProcessVersionRepository bpmnProcessVersionRepository) {
+                            BpmnProcessVersionRepository bpmnProcessVersionRepository,
+                            DmnDecisionService dmnDecisionService) {
         this.taskRepository = taskRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.bpmnProcessVersionRepository = bpmnProcessVersionRepository;
+        this.dmnDecisionService = dmnDecisionService;
     }
 
     @Override
@@ -103,7 +108,6 @@ public class TaskServiceImpl implements TaskService {
         if (request != null && request.getVariables() != null) {
             variables.putAll(request.getVariables());
         }
-        instance.setVariables(variables);
 
         String bpmnXml = bpmnProcessVersionRepository.findByProcessIdAndVersion(instance.getProcessId(), instance.getProcessVersion())
                 .map(version -> version.getBpmnXml())
@@ -111,7 +115,18 @@ public class TaskServiceImpl implements TaskService {
                         + instance.getProcessId() + " v" + instance.getProcessVersion(), 500));
         BpmnProcessDefinition definition = BpmnGraphParser.parse(bpmnXml);
 
-        AdvanceResult result = ProcessEngine.advance(definition, task.getNodeId(), variables);
+        Set<String> pendingJoinArrivals = instance.getPendingJoinArrivals() != null
+                ? instance.getPendingJoinArrivals() : Set.of();
+        // Other branches still open elsewhere in this instance - an inclusive join needs these
+        // to tell which of its incoming flows are still expected to arrive.
+        Set<String> otherActiveNodeIds = taskRepository.findByProcessInstanceId(instance.getId()).stream()
+                .filter(t -> !t.getId().equals(task.getId()))
+                .filter(t -> "PENDING".equals(t.getStatus()) || "CLAIMED".equals(t.getStatus()))
+                .map(Task::getNodeId)
+                .collect(Collectors.toSet());
+        AdvanceResult result = ProcessEngine.advance(definition, task.getNodeId(), variables, pendingJoinArrivals,
+                otherActiveNodeIds, dmnDecisionService::evaluate);
+        instance.setVariables(result.getUpdatedVariables());
 
         LocalDateTime now = LocalDateTime.now();
         task.setStatus("COMPLETED");
@@ -120,14 +135,25 @@ public class TaskServiceImpl implements TaskService {
         task.setUpdatedAt(now);
         Task savedTask = taskRepository.save(task);
 
-        if (result.isCompleted()) {
+        for (String nodeId : result.getNewUserTaskNodeIds()) {
+            createTaskForNode(instance, definition, nodeId);
+        }
+        instance.setPendingJoinArrivals(result.getPendingJoinArrivals());
+
+        // A parallel fork can leave other sibling tasks (created in this same instance by an
+        // earlier or later branch) still open, so instance completion depends on all of them,
+        // not just the branch this call just walked.
+        List<Task> openTasks = taskRepository.findByProcessInstanceId(instance.getId()).stream()
+                .filter(t -> "PENDING".equals(t.getStatus()) || "CLAIMED".equals(t.getStatus()))
+                .collect(Collectors.toList());
+
+        if (openTasks.isEmpty() && result.getPendingJoinArrivals().isEmpty()) {
             instance.setStatus("COMPLETED");
             instance.setCurrentNodeId(null);
             instance.setCompletedAt(now);
         } else {
             instance.setStatus("RUNNING");
-            instance.setCurrentNodeId(result.getNextNodeId());
-            createTaskForNode(instance, definition, result.getNextNodeId());
+            instance.setCurrentNodeId(openTasks.stream().map(Task::getNodeId).collect(Collectors.joining(",")));
         }
         instance.setUpdatedAt(now);
         processInstanceRepository.save(instance);

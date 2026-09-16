@@ -47,6 +47,53 @@ class BpmnGraphParserTest {
     }
 
     @Test
+    @DisplayName("Should parse parallel gateways and index incoming/outgoing flows for join detection")
+    void parsesParallelGatewaysAndIndexesIncomingFlows() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.PARALLEL_PROCESS_XML);
+
+        assertEquals(BpmnNodeType.PARALLEL_GATEWAY, def.getNode("pgFork").getType());
+        assertEquals(BpmnNodeType.PARALLEL_GATEWAY, def.getNode("pgJoin").getType());
+
+        assertEquals(2, def.getOutgoingFlows("pgFork").size());
+        assertEquals(2, def.getIncomingFlows("pgJoin").size());
+        assertTrue(def.getIncomingFlows("pgFork").isEmpty() || def.getIncomingFlows("pgFork").size() == 1);
+        assertEquals(1, def.getOutgoingFlows("pgJoin").size());
+    }
+
+    @Test
+    @DisplayName("Should parse inclusive gateways")
+    void parsesInclusiveGateways() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.INCLUSIVE_PROCESS_XML);
+
+        assertEquals(BpmnNodeType.INCLUSIVE_GATEWAY, def.getNode("igFork").getType());
+        assertEquals(BpmnNodeType.INCLUSIVE_GATEWAY, def.getNode("igJoin").getType());
+        assertEquals(2, def.getOutgoingFlows("igFork").size());
+        assertEquals(2, def.getIncomingFlows("igJoin").size());
+    }
+
+    @Test
+    @DisplayName("Should parse service tasks and business rule tasks")
+    void parsesServiceAndBusinessRuleTasks() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.SERVICE_TASK_PROCESS_XML);
+
+        assertEquals(BpmnNodeType.SERVICE_TASK, def.getNode("svc1").getType());
+        assertEquals(BpmnNodeType.BUSINESS_RULE_TASK, def.getNode("brt1").getType());
+        assertNull(def.getNode("brt1").getDecisionRef());
+        assertNull(def.getNode("brt1").getResultVariable());
+    }
+
+    @Test
+    @DisplayName("Should parse camunda:decisionRef/resultVariable on a business rule task")
+    void parsesBusinessRuleTaskDmnBinding() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.DMN_BUSINESS_RULE_PROCESS_XML);
+
+        BpmnNode brt = def.getNode("brt1");
+        assertEquals(BpmnNodeType.BUSINESS_RULE_TASK, brt.getType());
+        assertEquals("riskDecision", brt.getDecisionRef());
+        assertEquals("riskLevel", brt.getResultVariable());
+    }
+
+    @Test
     @DisplayName("Should reject XML without exactly one start event")
     void rejectsXmlWithoutExactlyOneStartEvent() {
         String xmlNoStart = """

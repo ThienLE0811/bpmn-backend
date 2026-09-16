@@ -147,4 +147,45 @@ class DmnDecisionServiceTest {
         assertEquals("credit_limit", response.getDecisionKey());
         assertEquals("COLLECT", response.getHitPolicy());
     }
+
+    @Test
+    @DisplayName("Should evaluate a DMN decision table and return its output columns")
+    void testEvaluateDecision() {
+        String dmnXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="defs">
+                  <decision id="Decision_1" name="Risk">
+                    <decisionTable id="DecisionTable_1" hitPolicy="UNIQUE">
+                      <input id="Input_1">
+                        <inputExpression id="InputExpression_1" typeRef="string">
+                          <text>amount</text>
+                        </inputExpression>
+                      </input>
+                      <output id="Output_1" name="riskLevel" typeRef="string" />
+                      <rule id="Rule_1">
+                        <inputEntry id="UnaryTests_1"><text>&gt;= 1000</text></inputEntry>
+                        <outputEntry id="LiteralExpression_1"><text>"HIGH"</text></outputEntry>
+                      </rule>
+                      <rule id="Rule_2">
+                        <inputEntry id="UnaryTests_2"><text>&lt; 1000</text></inputEntry>
+                        <outputEntry id="LiteralExpression_2"><text>"LOW"</text></outputEntry>
+                      </rule>
+                    </decisionTable>
+                  </decision>
+                </definitions>
+                """;
+        DmnDecision d = new DmnDecision("dmn-1", "risk_decision", "Risk Decision", 1, dmnXml, "ACTIVE");
+        storage.put("dmn-1", d);
+
+        Map<String, Object> result = dmnDecisionService.evaluate("risk_decision", Map.of("amount", 1500));
+
+        assertEquals("HIGH", result.get("riskLevel"));
+    }
+
+    @Test
+    @DisplayName("Should throw 404 when evaluating an unknown decision key")
+    void testEvaluateDecisionNotFound() {
+        AppException ex = assertThrows(AppException.class, () -> dmnDecisionService.evaluate("unknown", Map.of()));
+        assertEquals(404, ex.getStatusCode());
+    }
 }

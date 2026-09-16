@@ -92,8 +92,8 @@ public class AppContainer {
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
         this.authService = new AuthServiceImpl(this.userRepository, this.refreshTokenRepository);
-        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository);
-        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository);
+        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService);
+        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService);
 
         // 3. Controllers initialization
         this.workflowController = new WorkflowController(this.workflowService);

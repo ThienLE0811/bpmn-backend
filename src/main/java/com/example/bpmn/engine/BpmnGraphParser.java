@@ -17,13 +17,15 @@ import java.util.Map;
 
 /**
  * Parses a BPMN 2.0 XML document into an in-memory {@link BpmnProcessDefinition} graph
- * that {@link ProcessEngine} can walk. Only understands the v1 element subset: startEvent,
- * endEvent, userTask, exclusiveGateway, sequenceFlow - any other flow-node type (parallel
- * gateway, service task, etc.) is silently skipped when building nodes, which means a
- * sequenceFlow referencing one will fail the "unknown node" validation below with a clear
- * error rather than executing incorrectly.
+ * that {@link ProcessEngine} can walk. Understands startEvent, endEvent, userTask,
+ * exclusiveGateway, parallelGateway, inclusiveGateway, serviceTask, businessRuleTask
+ * and sequenceFlow - any other flow-node type (subprocess, script task, timer/boundary
+ * events, etc.) is silently skipped when building nodes, which means a sequenceFlow
+ * referencing one will fail the "unknown node" validation below with a clear error
+ * rather than executing incorrectly.
  */
 public class BpmnGraphParser {
+    private static final String CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn";
 
     private BpmnGraphParser() {
     }
@@ -73,6 +75,26 @@ public class BpmnGraphParser {
                     String defaultFlowId = nullIfBlank(element.getAttribute("default"));
                     nodesById.put(id, new BpmnNode(id, BpmnNodeType.EXCLUSIVE_GATEWAY, nullIfBlank(element.getAttribute("name")), defaultFlowId));
                 }
+                case "parallelGateway" -> {
+                    String id = element.getAttribute("id");
+                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.PARALLEL_GATEWAY, nullIfBlank(element.getAttribute("name")), null));
+                }
+                case "inclusiveGateway" -> {
+                    String id = element.getAttribute("id");
+                    String defaultFlowId = nullIfBlank(element.getAttribute("default"));
+                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.INCLUSIVE_GATEWAY, nullIfBlank(element.getAttribute("name")), defaultFlowId));
+                }
+                case "serviceTask" -> {
+                    String id = element.getAttribute("id");
+                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.SERVICE_TASK, nullIfBlank(element.getAttribute("name")), null));
+                }
+                case "businessRuleTask" -> {
+                    String id = element.getAttribute("id");
+                    String decisionRef = camundaAttribute(element, "decisionRef");
+                    String resultVariable = camundaAttribute(element, "resultVariable");
+                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.BUSINESS_RULE_TASK,
+                            nullIfBlank(element.getAttribute("name")), null, decisionRef, resultVariable));
+                }
                 case "sequenceFlow" -> flows.add(parseSequenceFlow(element));
                 default -> {
                     // Unsupported element type for v1 - intentionally not added as a node.
@@ -88,6 +110,7 @@ public class BpmnGraphParser {
         }
 
         Map<String, List<BpmnSequenceFlow>> outgoingFlowsByNodeId = new HashMap<>();
+        Map<String, List<BpmnSequenceFlow>> incomingFlowsByNodeId = new HashMap<>();
         for (BpmnSequenceFlow flow : flows) {
             if (!nodesById.containsKey(flow.getSourceRef())) {
                 throw new AppException("Sequence flow " + flow.getId() + " references unknown source node: " + flow.getSourceRef(), 400);
@@ -96,10 +119,11 @@ public class BpmnGraphParser {
                 throw new AppException("Sequence flow " + flow.getId() + " references unknown target node: " + flow.getTargetRef(), 400);
             }
             outgoingFlowsByNodeId.computeIfAbsent(flow.getSourceRef(), k -> new ArrayList<>()).add(flow);
+            incomingFlowsByNodeId.computeIfAbsent(flow.getTargetRef(), k -> new ArrayList<>()).add(flow);
         }
 
         String processId = nullIfBlank(processElement.getAttribute("id"));
-        return new BpmnProcessDefinition(processId, nodesById, outgoingFlowsByNodeId, startNodeId);
+        return new BpmnProcessDefinition(processId, nodesById, outgoingFlowsByNodeId, incomingFlowsByNodeId, startNodeId);
     }
 
     private static BpmnSequenceFlow parseSequenceFlow(Element element) {
@@ -137,6 +161,15 @@ public class BpmnGraphParser {
             return trimmed.substring(2, trimmed.length() - 1).trim();
         }
         return trimmed;
+    }
+
+    /** Reads a camunda-namespaced attribute, falling back to a literal "camunda:x" attribute lookup for documents that don't resolve the namespace declaration as expected. */
+    private static String camundaAttribute(Element element, String localName) {
+        String value = element.getAttributeNS(CAMUNDA_NS, localName);
+        if (value == null || value.isBlank()) {
+            value = element.getAttribute("camunda:" + localName);
+        }
+        return nullIfBlank(value);
     }
 
     private static String nullIfBlank(String value) {

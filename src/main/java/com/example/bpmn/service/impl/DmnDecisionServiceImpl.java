@@ -3,6 +3,9 @@ package com.example.bpmn.service.impl;
 import com.example.bpmn.dto.DmnDecisionRequest;
 import com.example.bpmn.dto.DmnDecisionResponse;
 import com.example.bpmn.dto.DmnDecisionUpdateRequest;
+import com.example.bpmn.dmn.DmnDecisionTable;
+import com.example.bpmn.dmn.DmnEvaluator;
+import com.example.bpmn.dmn.DmnTableParser;
 import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.DmnDecisionMapper;
@@ -17,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -150,6 +154,18 @@ public class DmnDecisionServiceImpl implements DmnDecisionService {
 
         dmnDecisionRepository.deleteById(id);
         logger.info("Deleted DMN decision with ID: {}", id);
+    }
+
+    @Override
+    public Map<String, Object> evaluate(String decisionKey, Map<String, Object> variables) {
+        DmnDecision decision = dmnDecisionRepository.findByDecisionKey(decisionKey)
+                .orElseThrow(() -> new AppException("DMN decision not found with key: " + decisionKey, 404));
+        if (decision.getDmnXml() == null || decision.getDmnXml().isBlank()) {
+            throw new AppException("DMN decision has no XML to evaluate: " + decisionKey, 400);
+        }
+
+        DmnDecisionTable table = DmnTableParser.parse(decision.getDmnXml());
+        return DmnEvaluator.evaluate(table, variables);
     }
 
     private void requireOwnerOrAdmin(String createdBy, String requesterUsername, String requesterRole, String message) {

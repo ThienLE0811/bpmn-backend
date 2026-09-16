@@ -16,6 +16,7 @@ import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
 import com.example.bpmn.repository.TaskRepository;
+import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.ProcessInstanceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -32,13 +34,16 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
     private final BpmnProcessRepository bpmnProcessRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final TaskRepository taskRepository;
+    private final DmnDecisionService dmnDecisionService;
 
     public ProcessInstanceServiceImpl(BpmnProcessRepository bpmnProcessRepository,
                                        ProcessInstanceRepository processInstanceRepository,
-                                       TaskRepository taskRepository) {
+                                       TaskRepository taskRepository,
+                                       DmnDecisionService dmnDecisionService) {
         this.bpmnProcessRepository = bpmnProcessRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.taskRepository = taskRepository;
+        this.dmnDecisionService = dmnDecisionService;
     }
 
     @Override
@@ -72,7 +77,8 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
         // Insert the instance row first - any task created below has a FK to it.
         processInstanceRepository.save(instance);
 
-        AdvanceResult result = ProcessEngine.advance(definition, definition.getStartNodeId(), variables);
+        AdvanceResult result = ProcessEngine.advance(definition, definition.getStartNodeId(), variables,
+                Set.of(), Set.of(), dmnDecisionService::evaluate);
         applyAdvanceResult(instance, definition, result);
 
         ProcessInstance saved = processInstanceRepository.save(instance);
@@ -97,14 +103,18 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
 
     private void applyAdvanceResult(ProcessInstance instance, BpmnProcessDefinition definition, AdvanceResult result) {
         LocalDateTime now = LocalDateTime.now();
-        if (result.isCompleted()) {
+        for (String nodeId : result.getNewUserTaskNodeIds()) {
+            createTaskForNode(instance, definition, nodeId);
+        }
+        instance.setVariables(result.getUpdatedVariables());
+        instance.setPendingJoinArrivals(result.getPendingJoinArrivals());
+        if (result.isFullyResolved()) {
             instance.setStatus("COMPLETED");
             instance.setCurrentNodeId(null);
             instance.setCompletedAt(now);
         } else {
             instance.setStatus("RUNNING");
-            instance.setCurrentNodeId(result.getNextNodeId());
-            createTaskForNode(instance, definition, result.getNextNodeId());
+            instance.setCurrentNodeId(String.join(",", result.getNewUserTaskNodeIds()));
         }
         instance.setUpdatedAt(now);
     }
