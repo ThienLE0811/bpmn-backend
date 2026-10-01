@@ -24,6 +24,7 @@ public final class TaskMapper {
                 task.getClaimedAt(),
                 task.getCompletedBy(),
                 task.getCompletedAt(),
+                task.getDueDate(),
                 task.getCreatedAt(),
                 task.getUpdatedAt()
         );

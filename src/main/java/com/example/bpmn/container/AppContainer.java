@@ -6,7 +6,6 @@ import com.example.bpmn.controller.DmnDecisionController;
 import com.example.bpmn.controller.ProcessInstanceController;
 import com.example.bpmn.controller.TaskController;
 import com.example.bpmn.controller.UserController;
-import com.example.bpmn.controller.WorkflowController;
 import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.DmnDecisionRepository;
@@ -15,7 +14,6 @@ import com.example.bpmn.repository.ProcessInstanceRepository;
 import com.example.bpmn.repository.RefreshTokenRepository;
 import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.repository.UserRepository;
-import com.example.bpmn.repository.WorkflowRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessVersionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionRepository;
@@ -24,21 +22,18 @@ import com.example.bpmn.repository.impl.PostgresProcessInstanceRepository;
 import com.example.bpmn.repository.impl.PostgresRefreshTokenRepository;
 import com.example.bpmn.repository.impl.PostgresTaskRepository;
 import com.example.bpmn.repository.impl.PostgresUserRepository;
-import com.example.bpmn.repository.impl.PostgresWorkflowRepository;
 import com.example.bpmn.service.AuthService;
 import com.example.bpmn.service.BpmnProcessService;
 import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.ProcessInstanceService;
 import com.example.bpmn.service.TaskService;
 import com.example.bpmn.service.UserService;
-import com.example.bpmn.service.WorkflowService;
 import com.example.bpmn.service.impl.AuthServiceImpl;
 import com.example.bpmn.service.impl.BpmnProcessServiceImpl;
 import com.example.bpmn.service.impl.DmnDecisionServiceImpl;
 import com.example.bpmn.service.impl.ProcessInstanceServiceImpl;
 import com.example.bpmn.service.impl.TaskServiceImpl;
 import com.example.bpmn.service.impl.UserServiceImpl;
-import com.example.bpmn.service.impl.WorkflowServiceImpl;
 
 /**
  * Dependency Injection container managing repositories, services, and controllers.
@@ -46,7 +41,6 @@ import com.example.bpmn.service.impl.WorkflowServiceImpl;
 public class AppContainer {
 
     // Repositories
-    private final WorkflowRepository workflowRepository;
     private final BpmnProcessRepository bpmnProcessRepository;
     private final BpmnProcessVersionRepository bpmnProcessVersionRepository;
     private final DmnDecisionRepository dmnDecisionRepository;
@@ -57,7 +51,6 @@ public class AppContainer {
     private final TaskRepository taskRepository;
 
     // Services
-    private final WorkflowService workflowService;
     private final BpmnProcessService bpmnProcessService;
     private final DmnDecisionService dmnDecisionService;
     private final UserService userService;
@@ -66,7 +59,6 @@ public class AppContainer {
     private final TaskService taskService;
 
     // Controllers
-    private final WorkflowController workflowController;
     private final BpmnProcessController bpmnProcessController;
     private final DmnDecisionController dmnDecisionController;
     private final UserController userController;
@@ -76,7 +68,6 @@ public class AppContainer {
 
     public AppContainer() {
         // 1. Repositories initialization
-        this.workflowRepository = new PostgresWorkflowRepository();
         this.bpmnProcessRepository = new PostgresBpmnProcessRepository();
         this.bpmnProcessVersionRepository = new PostgresBpmnProcessVersionRepository();
         this.dmnDecisionRepository = new PostgresDmnDecisionRepository();
@@ -87,7 +78,6 @@ public class AppContainer {
         this.taskRepository = new PostgresTaskRepository();
 
         // 2. Services initialization
-        this.workflowService = new WorkflowServiceImpl(this.workflowRepository);
         this.bpmnProcessService = new BpmnProcessServiceImpl(this.bpmnProcessRepository, this.bpmnProcessVersionRepository);
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
@@ -96,17 +86,12 @@ public class AppContainer {
         this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService);
 
         // 3. Controllers initialization
-        this.workflowController = new WorkflowController(this.workflowService);
         this.bpmnProcessController = new BpmnProcessController(this.bpmnProcessService);
         this.dmnDecisionController = new DmnDecisionController(this.dmnDecisionService);
         this.userController = new UserController(this.userService);
         this.authController = new AuthController(this.authService);
         this.processInstanceController = new ProcessInstanceController(this.processInstanceService);
         this.taskController = new TaskController(this.taskService);
-    }
-
-    public WorkflowController getWorkflowController() {
-        return workflowController;
     }
 
     public BpmnProcessController getBpmnProcessController() {
@@ -133,10 +118,6 @@ public class AppContainer {
         return taskController;
     }
 
-    public WorkflowService getWorkflowService() {
-        return workflowService;
-    }
-
     public BpmnProcessService getBpmnProcessService() {
         return bpmnProcessService;
     }
@@ -159,10 +140,6 @@ public class AppContainer {
 
     public TaskService getTaskService() {
         return taskService;
-    }
-
-    public WorkflowRepository getWorkflowRepository() {
-        return workflowRepository;
     }
 
     public BpmnProcessRepository getBpmnProcessRepository() {

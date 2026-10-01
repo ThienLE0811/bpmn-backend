@@ -140,4 +140,53 @@ final class BpmnFixtures {
               </process>
             </definitions>
             """;
+
+    /**
+     * start1 -> task1 (userTask, with a PT2H boundary timer) -> end1 (normal completion path)
+     * boundary1 (attachedToRef=task1) -> task2 (Escalate) -> end2 (Escalated path)
+     */
+    static final String BOUNDARY_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="boundary_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                <endEvent id="end1" name="Approved" />
+                <boundaryEvent id="boundary1" name="SLA Timeout" attachedToRef="task1">
+                  <timerEventDefinition id="timerDef1">
+                    <timeDuration>PT2H</timeDuration>
+                  </timerEventDefinition>
+                </boundaryEvent>
+                <sequenceFlow id="f3" sourceRef="boundary1" targetRef="task2" />
+                <userTask id="task2" name="Escalate" />
+                <sequenceFlow id="f4" sourceRef="task2" targetRef="end2" />
+                <endEvent id="end2" name="Escalated" />
+              </process>
+            </definitions>
+            """;
+
+    /** Same shape as {@link #BOUNDARY_TIMER_PROCESS_XML} but using an absolute timeDate instead of a relative timeDuration. */
+    static final String BOUNDARY_TIMER_DATE_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="boundary_timer_date_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                <endEvent id="end1" name="Approved" />
+                <boundaryEvent id="boundary1" name="Deadline" attachedToRef="task1">
+                  <timerEventDefinition id="timerDef1">
+                    <timeDate>2030-01-01T00:00:00</timeDate>
+                  </timerEventDefinition>
+                </boundaryEvent>
+                <sequenceFlow id="f3" sourceRef="boundary1" targetRef="task2" />
+                <userTask id="task2" name="Escalate" />
+                <sequenceFlow id="f4" sourceRef="task2" targetRef="end2" />
+                <endEvent id="end2" name="Escalated" />
+              </process>
+            </definitions>
+            """;
 }

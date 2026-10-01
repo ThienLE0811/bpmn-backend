@@ -9,15 +9,24 @@ public class BpmnProcessDefinition {
     private final Map<String, BpmnNode> nodesById;
     private final Map<String, List<BpmnSequenceFlow>> outgoingFlowsByNodeId;
     private final Map<String, List<BpmnSequenceFlow>> incomingFlowsByNodeId;
+    private final Map<String, BpmnNode> boundaryTimersByAttachedToNodeId;
     private final String startNodeId;
 
     public BpmnProcessDefinition(String processId, Map<String, BpmnNode> nodesById,
                                   Map<String, List<BpmnSequenceFlow>> outgoingFlowsByNodeId,
                                   Map<String, List<BpmnSequenceFlow>> incomingFlowsByNodeId, String startNodeId) {
+        this(processId, nodesById, outgoingFlowsByNodeId, incomingFlowsByNodeId, Map.of(), startNodeId);
+    }
+
+    public BpmnProcessDefinition(String processId, Map<String, BpmnNode> nodesById,
+                                  Map<String, List<BpmnSequenceFlow>> outgoingFlowsByNodeId,
+                                  Map<String, List<BpmnSequenceFlow>> incomingFlowsByNodeId,
+                                  Map<String, BpmnNode> boundaryTimersByAttachedToNodeId, String startNodeId) {
         this.processId = processId;
         this.nodesById = nodesById;
         this.outgoingFlowsByNodeId = outgoingFlowsByNodeId;
         this.incomingFlowsByNodeId = incomingFlowsByNodeId;
+        this.boundaryTimersByAttachedToNodeId = boundaryTimersByAttachedToNodeId;
         this.startNodeId = startNodeId;
     }
 
@@ -40,5 +49,10 @@ public class BpmnProcessDefinition {
     /** Flows arriving at a parallel gateway - used by {@link ProcessEngine} to detect join synchronization. */
     public List<BpmnSequenceFlow> getIncomingFlows(String nodeId) {
         return incomingFlowsByNodeId.getOrDefault(nodeId, List.of());
+    }
+
+    /** The {@link BpmnNodeType#BOUNDARY_TIMER_EVENT} node attached to this task node id, or null if it has none. */
+    public BpmnNode getBoundaryTimerFor(String taskNodeId) {
+        return boundaryTimersByAttachedToNodeId.get(taskNodeId);
     }
 }

@@ -20,6 +20,7 @@ import com.example.bpmn.service.TaskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -109,24 +110,7 @@ public class TaskServiceImpl implements TaskService {
             variables.putAll(request.getVariables());
         }
 
-        String bpmnXml = bpmnProcessVersionRepository.findByProcessIdAndVersion(instance.getProcessId(), instance.getProcessVersion())
-                .map(version -> version.getBpmnXml())
-                .orElseThrow(() -> new AppException("BPMN version snapshot not found for process "
-                        + instance.getProcessId() + " v" + instance.getProcessVersion(), 500));
-        BpmnProcessDefinition definition = BpmnGraphParser.parse(bpmnXml);
-
-        Set<String> pendingJoinArrivals = instance.getPendingJoinArrivals() != null
-                ? instance.getPendingJoinArrivals() : Set.of();
-        // Other branches still open elsewhere in this instance - an inclusive join needs these
-        // to tell which of its incoming flows are still expected to arrive.
-        Set<String> otherActiveNodeIds = taskRepository.findByProcessInstanceId(instance.getId()).stream()
-                .filter(t -> !t.getId().equals(task.getId()))
-                .filter(t -> "PENDING".equals(t.getStatus()) || "CLAIMED".equals(t.getStatus()))
-                .map(Task::getNodeId)
-                .collect(Collectors.toSet());
-        AdvanceResult result = ProcessEngine.advance(definition, task.getNodeId(), variables, pendingJoinArrivals,
-                otherActiveNodeIds, dmnDecisionService::evaluate);
-        instance.setVariables(result.getUpdatedVariables());
+        BpmnProcessDefinition definition = loadDefinition(instance);
 
         LocalDateTime now = LocalDateTime.now();
         task.setStatus("COMPLETED");
@@ -134,6 +118,87 @@ public class TaskServiceImpl implements TaskService {
         task.setCompletedAt(now);
         task.setUpdatedAt(now);
         Task savedTask = taskRepository.save(task);
+
+        advanceAndPersist(instance, definition, task.getNodeId(), variables, now);
+
+        logger.info("Task {} completed by {}, process instance {} now {}",
+                savedTask.getId(), requesterUserId, instance.getId(), instance.getStatus());
+        return TaskMapper.toResponse(savedTask);
+    }
+
+    @Override
+    public void processDueTimers() {
+        LocalDateTime now = LocalDateTime.now();
+        List<Task> dueTasks = taskRepository.findDueTimers(now);
+        for (Task task : dueTasks) {
+            try {
+                fireBoundaryTimer(task, now);
+            } catch (Exception e) {
+                logger.error("Failed to fire boundary timer for task {}: {}", task.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private void fireBoundaryTimer(Task task, LocalDateTime now) {
+        // Re-fetch: the task may have been claimed/completed by a human between the batch
+        // query and now, in which case its timer no longer applies.
+        Task current = taskRepository.findById(task.getId()).orElse(null);
+        if (current == null || !("PENDING".equals(current.getStatus()) || "CLAIMED".equals(current.getStatus()))) {
+            return;
+        }
+
+        ProcessInstance instance = processInstanceRepository.findById(current.getProcessInstanceId())
+                .orElseThrow(() -> new AppException("Process instance not found with id: " + current.getProcessInstanceId(), 404));
+        BpmnProcessDefinition definition = loadDefinition(instance);
+
+        BpmnNode boundaryEvent = definition.getBoundaryTimerFor(current.getNodeId());
+        if (boundaryEvent == null) {
+            // Defensive: shouldn't happen since dueDate is only ever set for a node with a
+            // boundary timer, but if the BPMN was edited/republished since, don't loop forever.
+            logger.warn("Task {} has a due dueDate but node {} has no boundary timer in the current definition - clearing dueDate",
+                    current.getId(), current.getNodeId());
+            current.setDueDate(null);
+            current.setUpdatedAt(now);
+            taskRepository.save(current);
+            return;
+        }
+
+        Map<String, Object> variables = new HashMap<>(instance.getVariables() != null ? instance.getVariables() : Map.of());
+
+        current.setStatus("CANCELLED");
+        current.setUpdatedAt(now);
+        taskRepository.save(current);
+
+        advanceAndPersist(instance, definition, boundaryEvent.getId(), variables, now);
+
+        logger.info("Boundary timer fired for task {} (node {}), process instance {} now {}",
+                current.getId(), current.getNodeId(), instance.getId(), instance.getStatus());
+    }
+
+    private BpmnProcessDefinition loadDefinition(ProcessInstance instance) {
+        String bpmnXml = bpmnProcessVersionRepository.findByProcessIdAndVersion(instance.getProcessId(), instance.getProcessVersion())
+                .map(version -> version.getBpmnXml())
+                .orElseThrow(() -> new AppException("BPMN version snapshot not found for process "
+                        + instance.getProcessId() + " v" + instance.getProcessVersion(), 500));
+        return BpmnGraphParser.parse(bpmnXml);
+    }
+
+    /** Walks the engine forward from {@code fromNodeId}, persists any newly created tasks, and updates the instance's status/currentNodeId/variables. Shared by task completion and boundary-timer firing. */
+    private void advanceAndPersist(ProcessInstance instance, BpmnProcessDefinition definition, String fromNodeId,
+                                    Map<String, Object> variables, LocalDateTime now) {
+        Set<String> pendingJoinArrivals = instance.getPendingJoinArrivals() != null
+                ? instance.getPendingJoinArrivals() : Set.of();
+        // Other branches still open elsewhere in this instance - an inclusive join needs these
+        // to tell which of its incoming flows are still expected to arrive. The task/branch this
+        // call originates from has already been saved as COMPLETED/CANCELLED by the caller, so
+        // it's naturally excluded by the PENDING/CLAIMED status filter.
+        Set<String> otherActiveNodeIds = taskRepository.findByProcessInstanceId(instance.getId()).stream()
+                .filter(t -> "PENDING".equals(t.getStatus()) || "CLAIMED".equals(t.getStatus()))
+                .map(Task::getNodeId)
+                .collect(Collectors.toSet());
+        AdvanceResult result = ProcessEngine.advance(definition, fromNodeId, variables, pendingJoinArrivals,
+                otherActiveNodeIds, dmnDecisionService::evaluate);
+        instance.setVariables(result.getUpdatedVariables());
 
         for (String nodeId : result.getNewUserTaskNodeIds()) {
             createTaskForNode(instance, definition, nodeId);
@@ -157,10 +222,6 @@ public class TaskServiceImpl implements TaskService {
         }
         instance.setUpdatedAt(now);
         processInstanceRepository.save(instance);
-
-        logger.info("Task {} completed by {}, process instance {} now {}",
-                savedTask.getId(), requesterUserId, instance.getId(), instance.getStatus());
-        return TaskMapper.toResponse(savedTask);
     }
 
     private void createTaskForNode(ProcessInstance instance, BpmnProcessDefinition definition, String nodeId) {
@@ -175,6 +236,18 @@ public class TaskServiceImpl implements TaskService {
         next.setStatus("PENDING");
         next.setCreatedAt(now);
         next.setUpdatedAt(now);
+        next.setDueDate(computeBoundaryTimerDueDate(definition, nodeId, now));
         taskRepository.save(next);
+    }
+
+    /** Computes when this task's attached boundary timer should fire, or null if it has none. */
+    static LocalDateTime computeBoundaryTimerDueDate(BpmnProcessDefinition definition, String nodeId, LocalDateTime now) {
+        BpmnNode boundaryEvent = definition.getBoundaryTimerFor(nodeId);
+        if (boundaryEvent == null) {
+            return null;
+        }
+        return boundaryEvent.getTimerDate() != null
+                ? LocalDateTime.parse(boundaryEvent.getTimerDate())
+                : now.plus(Duration.parse(boundaryEvent.getTimerDuration()));
     }
 }

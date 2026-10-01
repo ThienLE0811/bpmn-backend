@@ -181,6 +181,16 @@ class ProcessEngineTest {
     }
 
     @Test
+    @DisplayName("Advancing from a boundary timer event's node id should walk its own outgoing flow like any other pass-through node")
+    void advanceFromBoundaryTimerEventWalksItsOutgoingFlow() {
+        BpmnProcessDefinition boundaryDef = BpmnGraphParser.parse(BpmnFixtures.BOUNDARY_TIMER_PROCESS_XML);
+
+        AdvanceResult result = ProcessEngine.advance(boundaryDef, "boundary1", Map.of());
+
+        assertEquals(List.of("task2"), result.getNewUserTaskNodeIds());
+    }
+
+    @Test
     @DisplayName("Should throw a clear error when a business rule task references a decision but no DMN evaluator was supplied")
     void businessRuleTaskWithoutEvaluatorThrows() {
         BpmnProcessDefinition dmnDef = BpmnGraphParser.parse(BpmnFixtures.DMN_BUSINESS_RULE_PROCESS_XML);

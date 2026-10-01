@@ -1,6 +1,7 @@
 package com.example.bpmn.repository;
 
 import com.example.bpmn.model.Task;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,4 +13,6 @@ public interface TaskRepository {
     List<Task> findByProcessInstanceId(String processInstanceId);
     List<Task> findAll();
     boolean deleteById(String id);
+    /** Open (PENDING/CLAIMED) tasks whose boundary-timer {@code dueDate} has already passed. */
+    List<Task> findDueTimers(LocalDateTime now);
 }

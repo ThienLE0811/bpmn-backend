@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Centralized Route Registry for HTTP Server.
- * Routes are modularized by domain (BPMN, DMN, User, Workflow, Task, etc.).
+ * Routes are modularized by domain (BPMN, DMN, User, Task, etc.).
  */
 public class RouteConfig {
     private static final Logger logger = LoggerFactory.getLogger(RouteConfig.class);
@@ -27,7 +27,6 @@ public class RouteConfig {
 
         registerHealthRoute(server);
         registerAuthRoutes(server, container);
-        registerWorkflowRoutes(server, container);
         registerBpmnRoutes(server, container);
         registerDmnRoutes(server, container);
         registerUserRoutes(server, container);
@@ -68,14 +67,6 @@ public class RouteConfig {
     private static void registerBpmnRoutes(HttpServer server, AppContainer container) {
         server.createContext("/api/bpmn-processes", container.getBpmnProcessController());
         logger.info("  [BPMN] Registered: /api/bpmn-processes");
-    }
-
-    /**
-     * Workflow Module Routes
-     */
-    private static void registerWorkflowRoutes(HttpServer server, AppContainer container) {
-        server.createContext("/api/workflows", container.getWorkflowController());
-        logger.info("  [Workflow] Registered: /api/workflows");
     }
 
     /**

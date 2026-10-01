@@ -131,6 +131,7 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
         task.setStatus("PENDING");
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
+        task.setDueDate(TaskServiceImpl.computeBoundaryTimerDueDate(definition, nodeId, now));
         taskRepository.save(task);
     }
 }

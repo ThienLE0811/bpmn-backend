@@ -4,6 +4,7 @@ import com.example.bpmn.config.AppConfig;
 import com.example.bpmn.config.DatabaseConfig;
 import com.example.bpmn.config.RouteConfig;
 import com.example.bpmn.container.AppContainer;
+import com.example.bpmn.scheduler.TimerScheduler;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,20 +37,26 @@ public class Main {
         // 2. Initialize Dependency Container (DI)
         AppContainer container = new AppContainer();
 
-        // 3. Register Shutdown Hook
-        Runtime.getRuntime().addShutdownHook(new Thread(DatabaseConfig::close));
+        // 3. Start background timer scheduler (fires boundary timer events)
+        TimerScheduler timerScheduler = TimerScheduler.start(container.getTaskService());
+
+        // 4. Register Shutdown Hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            timerScheduler.stop();
+            DatabaseConfig.close();
+        }));
 
         try {
-            // 4. Create JDK HttpServer
+            // 5. Create JDK HttpServer
             HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 0);
 
-            // 5. Register All Routes via RouteConfig
+            // 6. Register All Routes via RouteConfig
             RouteConfig.registerRoutes(server, container);
 
-            // 6. Set Executor (Java 21 Virtual Threads)
+            // 7. Set Executor (Java 21 Virtual Threads)
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
 
-            // 7. Start Server
+            // 8. Start Server
             server.start();
 
             logger.info("=================================================");

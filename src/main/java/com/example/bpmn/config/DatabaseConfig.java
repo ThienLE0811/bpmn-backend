@@ -2,6 +2,7 @@ package com.example.bpmn.config;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.flywaydb.core.Flyway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,7 +11,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
 
 public class DatabaseConfig {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseConfig.class);
@@ -95,144 +95,21 @@ public class DatabaseConfig {
     }
 
     /**
-     * Auto create necessary tables if they do not exist.
+     * Applies versioned migrations from classpath:db/migration via Flyway.
+     * baselineOnMigrate/baselineVersion("0") lets this run against databases that already
+     * have the tables from the old hand-rolled CREATE TABLE IF NOT EXISTS bootstrap (V1
+     * baseline is recorded as already applied instead of being re-executed); a fresh
+     * database runs V1 from scratch.
      */
     public static void initDatabase() {
-        String sql = """
-            CREATE TABLE IF NOT EXISTS public.users (
-                id VARCHAR(100) PRIMARY KEY,
-                username VARCHAR(100) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                full_name VARCHAR(255),
-                role VARCHAR(50),
-                status VARCHAR(50),
-                password_hash VARCHAR(255),
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            );
-
-            ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
-
-            CREATE TABLE IF NOT EXISTS public.bpmn_processes (
-                id VARCHAR(100) PRIMARY KEY,
-                process_key VARCHAR(100) NOT NULL,
-                process_name VARCHAR(255) NOT NULL,
-                description TEXT,
-                category VARCHAR(100),
-                version INT DEFAULT 1,
-                bpmn_xml TEXT,
-                status VARCHAR(50),
-                created_by VARCHAR(100),
-                updated_by VARCHAR(100),
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS public.dmn_decision (
-                id VARCHAR(100) PRIMARY KEY,
-                decision_key VARCHAR(100) NOT NULL,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                hit_policy VARCHAR(50),
-                category VARCHAR(100),
-                version INT DEFAULT 1,
-                dmn_xml TEXT,
-                status VARCHAR(50),
-                created_by VARCHAR(100),
-                updated_by VARCHAR(100),
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS public.workflows (
-                id VARCHAR(100) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                status VARCHAR(50),
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS public.process_instances (
-                id VARCHAR(100) PRIMARY KEY,
-                process_id VARCHAR(100) NOT NULL REFERENCES public.bpmn_processes(id),
-                process_version INT NOT NULL,
-                status VARCHAR(50) NOT NULL,
-                current_node_id VARCHAR(100),
-                variables TEXT,
-                pending_join_arrivals TEXT,
-                started_by VARCHAR(100),
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            );
-
-            ALTER TABLE public.process_instances ADD COLUMN IF NOT EXISTS pending_join_arrivals TEXT;
-
-            CREATE TABLE IF NOT EXISTS public.tasks (
-                id VARCHAR(100) PRIMARY KEY,
-                process_id VARCHAR(100),
-                process_instance_id VARCHAR(100) REFERENCES public.process_instances(id) ON DELETE CASCADE,
-                node_id VARCHAR(100),
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                assignee_id VARCHAR(100),
-                status VARCHAR(50),
-                claimed_by VARCHAR(100),
-                claimed_at TIMESTAMP,
-                completed_by VARCHAR(100),
-                completed_at TIMESTAMP,
-                due_date TIMESTAMP,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP
-            );
-
-            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS process_instance_id VARCHAR(100) REFERENCES public.process_instances(id) ON DELETE CASCADE;
-            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS node_id VARCHAR(100);
-            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS claimed_by VARCHAR(100);
-            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP;
-            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_by VARCHAR(100);
-            ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
-
-            CREATE TABLE IF NOT EXISTS public.bpmn_process_versions (
-                id VARCHAR(100) PRIMARY KEY,
-                process_id VARCHAR(100) NOT NULL REFERENCES public.bpmn_processes(id) ON DELETE CASCADE,
-                version INT NOT NULL,
-                bpmn_xml TEXT,
-                created_by VARCHAR(100),
-                created_at TIMESTAMP,
-                UNIQUE (process_id, version)
-            );
-
-            CREATE TABLE IF NOT EXISTS public.dmn_decision_versions (
-                id VARCHAR(100) PRIMARY KEY,
-                decision_id VARCHAR(100) NOT NULL REFERENCES public.dmn_decision(id) ON DELETE CASCADE,
-                version INT NOT NULL,
-                dmn_xml TEXT,
-                created_by VARCHAR(100),
-                created_at TIMESTAMP,
-                UNIQUE (decision_id, version)
-            );
-
-            CREATE TABLE IF NOT EXISTS public.refresh_tokens (
-                id VARCHAR(100) PRIMARY KEY,
-                user_id VARCHAR(100) NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-                token_hash VARCHAR(255) NOT NULL UNIQUE,
-                expires_at TIMESTAMP NOT NULL,
-                revoked BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at TIMESTAMP NOT NULL
-            );
-        """;
-
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement()) {
-            stmt.execute(sql);
-            logger.info("Database schema initialized. Tables (users, bpmn_processes, dmn_decision, workflows, tasks) are ready.");
-        } catch (SQLException e) {
-            logger.error("Failed to initialize database schema: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to initialize database schema", e);
-        }
+        Flyway flyway = Flyway.configure()
+                .dataSource(getDataSource())
+                .baselineOnMigrate(true)
+                .baselineVersion("0")
+                .locations("classpath:db/migration")
+                .load();
+        flyway.migrate();
+        logger.info("Database schema migrated via Flyway.");
     }
 
     public static synchronized void close() {

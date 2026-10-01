@@ -14,6 +14,7 @@ public class TaskResponse {
     private LocalDateTime claimedAt;
     private String completedBy;
     private LocalDateTime completedAt;
+    private LocalDateTime dueDate;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -22,7 +23,8 @@ public class TaskResponse {
 
     public TaskResponse(String id, String processInstanceId, String nodeId, String name, String description,
                          String status, String assigneeId, String claimedBy, LocalDateTime claimedAt,
-                         String completedBy, LocalDateTime completedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
+                         String completedBy, LocalDateTime completedAt, LocalDateTime dueDate,
+                         LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.processInstanceId = processInstanceId;
         this.nodeId = nodeId;
@@ -34,6 +36,7 @@ public class TaskResponse {
         this.claimedAt = claimedAt;
         this.completedBy = completedBy;
         this.completedAt = completedAt;
+        this.dueDate = dueDate;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -124,6 +127,14 @@ public class TaskResponse {
 
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public LocalDateTime getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(LocalDateTime dueDate) {
+        this.dueDate = dueDate;
     }
 
     public LocalDateTime getCreatedAt() {

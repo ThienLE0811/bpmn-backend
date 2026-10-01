@@ -1,82 +1,152 @@
 # BPMN Backend (Pure Java + JDK HttpServer)
 
-Dự án Java thuần áp dụng kiến trúc phân lớp (Layered Architecture) và tích hợp sẵn **JDK HttpServer** (sử dụng Virtual Threads của Java 21) để phục vụ REST API cho xử lý luồng BPMN.
+Backend Java thuần (không dùng Spring), kiến trúc phân lớp `controller → service → repository → model`, chạy trên **JDK `HttpServer`** với Virtual Threads (Java 21). Đây là một **BPMN engine tự viết** (không dùng Camunda/Flowable/Zeebe): parse BPMN 2.0 XML thành graph và tự thực thi luồng (start event, user task, exclusive/parallel/inclusive gateway, service task, business rule task liên kết DMN, end event).
+
+---
+
+## Tech stack
+
+- Java 21, Maven, không Spring — routing tự viết (`BaseController` / `Route` / `RequestContext`) trên `com.sun.net.httpserver.HttpServer`.
+- PostgreSQL qua HikariCP, schema quản lý bằng **Flyway** (`src/main/resources/db/migration`).
+- Jackson (JSON), JJWT + jBCrypt (auth), commons-jexl3 (đánh giá điều kiện gateway/DMN), SLF4J + Logback, JUnit 5.
+- Deploy: Docker + `render.yaml` (Render + Neon Postgres).
 
 ---
 
 ## Cấu trúc thư mục
 
 ```
-D:/works/bpmn/code/backend/
-├── pom.xml                                  # Quản lý thư viện và cấu hình Maven (Java 21)
-├── .gitignore                               # Quy tắc bỏ qua file của Git
-├── README.md                                # Hướng dẫn dự án
+backend/
+├── pom.xml
+├── Dockerfile, render.yaml
 ├── src
 │   ├── main
 │   │   ├── java/com/example/bpmn
-│   │   │   ├── Main.java                    # Entry point khởi động HTTP Server
-│   │   │   ├── config/                      # Đọc file cấu hình (AppConfig)
-│   │   │   ├── controller/                  # Nơi viết API & định tuyến HTTP (WorkflowController)
-│   │   │   ├── service/                     # Xử lý nghiệp vụ (WorkflowService & WorkflowServiceImpl)
-│   │   │   ├── repository/                  # Quản lý dữ liệu (WorkflowRepository & InMemoryWorkflowRepository)
-│   │   │   ├── model/                       # Domain Entity (Workflow)
-│   │   │   ├── dto/                         # DTO Request/Response (WorkflowRequest, WorkflowResponse)
-│   │   │   ├── exception/                   # Xử lý lỗi (AppException)
-│   │   │   └── util/                        # Tiện ích JSON (JsonUtil)
+│   │   │   ├── Main.java              # Entry point: init DB (Flyway) rồi start HttpServer
+│   │   │   ├── config/                # AppConfig, DatabaseConfig (Flyway), RouteConfig
+│   │   │   ├── container/             # AppContainer - DI thủ công (repo → service → controller)
+│   │   │   ├── controller/            # REST endpoints (Auth, BpmnProcess, DmnDecision, ProcessInstance, Task, User)
+│   │   │   ├── service/ + service/impl/
+│   │   │   ├── repository/ + repository/impl/   # JDBC thuần, không ORM
+│   │   │   ├── model/                 # Domain entity: User, BpmnProcess(+Version), DmnDecision(+Version),
+│   │   │   │                          #   ProcessInstance, Task, RefreshToken
+│   │   │   ├── dto/                   # Request/Response DTO cho từng API
+│   │   │   ├── mapper/                # model → DTO
+│   │   │   ├── engine/                # BpmnGraphParser + ProcessEngine (BPMN engine thật)
+│   │   │   ├── dmn/                   # DmnTableParser + DmnEvaluator (đánh giá DMN decision table)
+│   │   │   ├── exception/             # AppException (message + HTTP status code)
+│   │   │   ├── http/                  # BaseController/Route/RequestContext (mini routing framework)
+│   │   │   └── util/                  # JwtUtil, PasswordUtil, RefreshTokenUtil, JsonUtil
 │   │   └── resources
-│   │       ├── application.properties       # Cấu hình server port, host
-│   │       └── logback.xml                  # Cấu hình log SLF4J / Logback
-│   └── test
-│       └── java/com/example/bpmn
-│           └── WorkflowServiceTest.java     # Unit test (JUnit 5)
+│   │       ├── application.properties
+│   │       ├── logback.xml
+│   │       └── db/migration/          # Flyway: V1__baseline_schema.sql, V2__..., ...
+│   └── test/java/com/example/bpmn     # JUnit 5, không Mockito - repo fake bằng anonymous class + Map
 ```
 
 ---
 
-## Danh sách API (`WorkflowController.java`)
+## Database & migrations (Flyway)
 
-Server lắng nghe tại cổng mặc định: `http://localhost:8080`
+Schema được quản lý bằng **Flyway**, không còn `CREATE TABLE IF NOT EXISTS` viết tay trong code. `DatabaseConfig.initDatabase()` (gọi từ `Main.java` khi khởi động) chạy `Flyway.migrate()` với `baselineOnMigrate(true)` — nghĩa là:
 
-| Phương thức | Endpoint | Mô tả | Body mẫu (JSON) |
-|---|---|---|---|
-| `GET` | `/api/workflows` | Lấy danh sách tất cả workflows | Không |
-| `GET` | `/api/workflows/{id}` | Lấy chi tiết workflow theo ID | Không |
-| `POST` | `/api/workflows` | Tạo mới một workflow | `{"name": "Order Process", "description": "Xử lý đơn hàng"}` |
-| `DELETE` | `/api/workflows/{id}` | Xóa workflow theo ID | Không |
+- Database mới hoàn toàn: chạy toàn bộ migration từ `V1` lên.
+- Database đã có sẵn (dev/prod đang chạy trước khi đưa Flyway vào): tự baseline, không cần thao tác gì thêm.
+
+Khi cần đổi schema: **thêm file migration mới** `V{n}__mo_ta.sql` vào `src/main/resources/db/migration`, không sửa file `V1`/`V2` đã chạy (Flyway kiểm checksum, sửa file cũ sẽ làm migrate thất bại ở môi trường đã áp dụng nó).
 
 ---
 
-## Ví dụ gọi API (cURL / Postman)
+## Cách chạy dự án (local)
 
-### 1. Tạo mới Workflow (POST):
-```bash
-curl -X POST http://localhost:8080/api/workflows \
-  -H "Content-Type: application/json" \
-  -d "{\"name\": \"Approval_Process\", \"description\": \"Duyet don hang tu dong\"}"
-```
+1. Có PostgreSQL chạy ở `localhost:5432`, tạo database (mặc định cấu hình trong `application.properties` là db tên `los`, user/pass tuỳ chỉnh theo máy bạn).
+2. Chạy `Main.java` (hoặc `mvn compile exec:java` nếu có exec plugin, thường dùng IDE). Ứng dụng tự áp Flyway migration khi khởi động, không cần chạy SQL tay.
+3. Server mặc định ở `http://localhost:8080`. `GET /health` → `{"status":"OK"}`.
 
-### 2. Lấy danh sách Workflows (GET):
-```bash
-curl -X GET http://localhost:8080/api/workflows
-```
-
-### 3. Lấy chi tiết Workflow theo ID (GET):
-```bash
-curl -X GET http://localhost:8080/api/workflows/<ID_CUA_WORKFLOW>
-```
-
-### 4. Xóa Workflow (DELETE):
-```bash
-curl -X DELETE http://localhost:8080/api/workflows/<ID_CUA_WORKFLOW>
-```
+Chạy test: `mvn test`.
 
 ---
 
-## Cách chạy dự án
+## Danh sách API
 
-1. Mở dự án trong **IntelliJ IDEA**.
-2. Chạy hàm `main()` tại [`Main.java`](file:///D:/works/bpmn/code/backend/src/main/java/com/example/bpmn/Main.java).
-3. Server sẽ mở tại cổng `8080` và sẵn sàng nhận request từ Postman hoặc trình duyệt!
+Tất cả route yêu cầu JWT (`Authorization: Bearer <token>`) qua `authInterceptor`/`RequestContext`, trừ 3 route auth dưới đây (`postPublic`).
+
+### Auth (`/api/auth`)
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| POST | `/api/auth/login` | Đăng nhập, trả access token (JWT) + refresh token |
+| POST | `/api/auth/refresh` | Cấp access token mới từ refresh token còn hạn |
+| POST | `/api/auth/logout` | Revoke refresh token |
+
+### BPMN Process (`/api/bpmn-processes`)
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| GET | `/api/bpmn-processes` | List (phân trang) |
+| POST | `/api/bpmn-processes` | Tạo process definition mới (kèm BPMN XML) |
+| GET | `/api/bpmn-processes/key/:key` | Lấy theo `processKey` |
+| GET | `/api/bpmn-processes/:id` | Lấy theo id |
+| PUT | `/api/bpmn-processes/:id` | Cập nhật (tự tăng version, lưu snapshot vào `bpmn_process_versions`) |
+| GET | `/api/bpmn-processes/:id/versions` | Lịch sử version |
+| GET | `/api/bpmn-processes/:id/versions/:version` | Snapshot XML của một version cụ thể |
+| DELETE | `/api/bpmn-processes/:id` | Xoá |
+
+### DMN Decision (`/api/dmn-decisions`)
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| GET | `/api/dmn-decisions` | List (phân trang) |
+| POST | `/api/dmn-decisions` | Tạo decision table mới (DMN XML) |
+| GET | `/api/dmn-decisions/key/:key` | Lấy theo `decisionKey` |
+| GET | `/api/dmn-decisions/:id` | Lấy theo id |
+| PUT | `/api/dmn-decisions/:id` | Cập nhật (tự tăng version) |
+| DELETE | `/api/dmn-decisions/:id` | Xoá |
+
+### Process Instance / "Case" (`/api/process-instances`)
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| GET | `/api/process-instances` | List (phân trang) |
+| POST | `/api/process-instances` | Start một case mới từ `processId` (+ biến khởi tạo), engine tự advance tới user task đầu tiên (hoặc COMPLETED ngay nếu không có user task nào) |
+| GET | `/api/process-instances/:id` | Lấy chi tiết case |
+
+### Task (`/api/tasks`)
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| GET | `/api/tasks?status=&mine=` | List, filter theo status và/hoặc chỉ task của người gọi |
+| GET | `/api/tasks/:id` | Chi tiết task |
+| POST | `/api/tasks/:id/claim` | Nhận task (PENDING → CLAIMED) |
+| POST | `/api/tasks/:id/complete` | Hoàn thành task (kèm biến), engine advance tiếp tới task/gateway kế |
+
+### User (`/api/users`, ADMIN cho phần đổi role)
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| GET | `/api/users` | List (phân trang) |
+| POST | `/api/users` | Tạo user |
+| GET | `/api/users/:id` | Chi tiết |
+| PUT | `/api/users/:id` | Cập nhật |
+| DELETE | `/api/users/:id` | Xoá |
+
+---
+
+## BPMN engine — phạm vi hỗ trợ hiện tại
+
+Hỗ trợ: start event, end event, user task, exclusive gateway (điều kiện JEXL `${...}` + default flow), **parallel gateway** (fork/join thật, có token-walk + `pendingJoinArrivals`), **inclusive gateway** (OR-split/OR-join, xấp xỉ bằng reachability - xem code/comment trong `ProcessEngine` để biết giới hạn), service task & business rule task (chạy tự động, không tạo Task cho người dùng; business rule task có thể bind `camunda:decisionRef`/`camunda:resultVariable` để gọi DMN thật qua `DmnEvaluator`).
+
+**Chưa hỗ trợ**: subprocess/call activity, timer event, boundary event, script task. Không có process nào hiện có trong DB dev dùng các phần tử này, nhưng nếu import BPMN có chúng, engine sẽ lỗi khi gặp node lạ.
+
+**Giới hạn DMN**: chỉ đọc `<decisionTable>` đầu tiên trong file DMN, chỉ hỗ trợ hit policy `UNIQUE`/`FIRST`, input entry dạng so sánh đơn giản (`=`, `<`, `<=`, `>`, `>=`, `-` wildcard) — chưa hỗ trợ FEEL range (`[100..200]`) hay danh sách giá trị (`"A","B"`).
+
+---
+
+## Testing
+
+`mvn test` — JUnit 5, không dùng Mockito. Repository được fake bằng anonymous class backed bởi `Map`/`ConcurrentHashMap` (xem `AuthServiceTest`, `TaskServiceTest`, `ProcessInstanceServiceTest`, `DmnDecisionServiceTest`, `BpmnProcessServiceTest` để theo đúng convention khi viết test mới). Engine có test riêng ở `engine/BpmnGraphParserTest`, `engine/ProcessEngineTest` (fixture BPMN XML dùng chung trong `engine/BpmnFixtures`).
+
+Đã có test cho: Auth, Task, ProcessInstance, BpmnProcess, DmnDecision, và toàn bộ engine (parser + advance). **Chưa có test cho `UserService`** và chưa có test tích hợp ở mức HTTP/controller.
+
+---
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) chạy `mvn test` trên mỗi push/PR vào `main`. Không tự động deploy — deploy vẫn qua Render Blueprint (xem phần dưới).
 
 ---
 
@@ -106,6 +176,8 @@ Repo đã có sẵn `Dockerfile` và `render.yaml` ở thư mục gốc.
 5. Sau khi build xong, Render cấp một URL dạng `https://bpmn-backend-xxxx.onrender.com`.
 
 Gọi thử: `curl https://bpmn-backend-xxxx.onrender.com/health` → `{"status":"OK"}`.
+
+Ứng dụng tự chạy Flyway migration khi khởi động, kể cả trên Neon lần đầu — không cần chạy SQL tay trên production.
 
 ### Lưu ý free tier
 

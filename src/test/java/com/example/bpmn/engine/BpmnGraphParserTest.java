@@ -94,6 +94,132 @@ class BpmnGraphParserTest {
     }
 
     @Test
+    @DisplayName("Should parse a boundary timer event's attachedToRef and timeDuration")
+    void parsesBoundaryTimerEventDuration() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.BOUNDARY_TIMER_PROCESS_XML);
+
+        BpmnNode boundary = def.getNode("boundary1");
+        assertEquals(BpmnNodeType.BOUNDARY_TIMER_EVENT, boundary.getType());
+        assertEquals("task1", boundary.getAttachedToNodeId());
+        assertEquals("PT2H", boundary.getTimerDuration());
+        assertNull(boundary.getTimerDate());
+
+        assertSame(boundary, def.getBoundaryTimerFor("task1"));
+        assertNull(def.getBoundaryTimerFor("task2"));
+
+        assertEquals(1, def.getOutgoingFlows("boundary1").size());
+        assertEquals("task2", def.getOutgoingFlows("boundary1").get(0).getTargetRef());
+    }
+
+    @Test
+    @DisplayName("Should parse a boundary timer event's timeDate")
+    void parsesBoundaryTimerEventDate() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.BOUNDARY_TIMER_DATE_PROCESS_XML);
+
+        BpmnNode boundary = def.getNode("boundary1");
+        assertEquals("2030-01-01T00:00:00", boundary.getTimerDate());
+        assertNull(boundary.getTimerDuration());
+    }
+
+    @Test
+    @DisplayName("Should reject a non-interrupting boundary event (cancelActivity=false)")
+    void rejectsNonInterruptingBoundaryEvent() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                    <userTask id="task1" />
+                    <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                    <endEvent id="end1" />
+                    <boundaryEvent id="boundary1" attachedToRef="task1" cancelActivity="false">
+                      <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                    </boundaryEvent>
+                    <sequenceFlow id="f3" sourceRef="boundary1" targetRef="end1" />
+                  </process>
+                </definitions>
+                """;
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should reject a boundary event with no timerEventDefinition")
+    void rejectsBoundaryEventWithoutTimerDefinition() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                    <userTask id="task1" />
+                    <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                    <endEvent id="end1" />
+                    <boundaryEvent id="boundary1" attachedToRef="task1" />
+                    <sequenceFlow id="f3" sourceRef="boundary1" targetRef="end1" />
+                  </process>
+                </definitions>
+                """;
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should reject a boundary event with an invalid timeDuration")
+    void rejectsBoundaryEventWithInvalidDuration() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                    <userTask id="task1" />
+                    <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                    <endEvent id="end1" />
+                    <boundaryEvent id="boundary1" attachedToRef="task1">
+                      <timerEventDefinition><timeDuration>not-a-duration</timeDuration></timerEventDefinition>
+                    </boundaryEvent>
+                    <sequenceFlow id="f3" sourceRef="boundary1" targetRef="end1" />
+                  </process>
+                </definitions>
+                """;
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should reject two boundary timers attached to the same task")
+    void rejectsDuplicateBoundaryTimersOnSameTask() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                    <userTask id="task1" />
+                    <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                    <endEvent id="end1" />
+                    <boundaryEvent id="boundary1" attachedToRef="task1">
+                      <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                    </boundaryEvent>
+                    <sequenceFlow id="f3" sourceRef="boundary1" targetRef="end1" />
+                    <boundaryEvent id="boundary2" attachedToRef="task1">
+                      <timerEventDefinition><timeDuration>PT2H</timeDuration></timerEventDefinition>
+                    </boundaryEvent>
+                    <sequenceFlow id="f4" sourceRef="boundary2" targetRef="end1" />
+                  </process>
+                </definitions>
+                """;
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
     @DisplayName("Should reject XML without exactly one start event")
     void rejectsXmlWithoutExactlyOneStartEvent() {
         String xmlNoStart = """

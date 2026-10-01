@@ -8,6 +8,9 @@ public class BpmnNode {
     private final String defaultFlowId;
     private final String decisionRef;
     private final String resultVariable;
+    private final String attachedToNodeId;
+    private final String timerDuration;
+    private final String timerDate;
 
     public BpmnNode(String id, BpmnNodeType type, String name, String defaultFlowId) {
         this(id, type, name, defaultFlowId, null, null);
@@ -21,6 +24,23 @@ public class BpmnNode {
         this.defaultFlowId = defaultFlowId;
         this.decisionRef = decisionRef;
         this.resultVariable = resultVariable;
+        this.attachedToNodeId = null;
+        this.timerDuration = null;
+        this.timerDate = null;
+    }
+
+    /** Only meaningful for {@link BpmnNodeType#BOUNDARY_TIMER_EVENT} - exactly one of {@code timerDuration}/{@code timerDate} is set. */
+    public BpmnNode(String id, BpmnNodeType type, String name, String defaultFlowId,
+                     String attachedToNodeId, String timerDuration, String timerDate) {
+        this.id = id;
+        this.type = type;
+        this.name = name;
+        this.defaultFlowId = defaultFlowId;
+        this.decisionRef = null;
+        this.resultVariable = null;
+        this.attachedToNodeId = attachedToNodeId;
+        this.timerDuration = timerDuration;
+        this.timerDate = timerDate;
     }
 
     public String getId() {
@@ -47,5 +67,20 @@ public class BpmnNode {
     /** Process variable name (from {@code camunda:resultVariable}) to store the decision result under, or null. */
     public String getResultVariable() {
         return resultVariable;
+    }
+
+    /** Node id this boundary event is attached to (from {@code attachedToRef}), or null unless this is a {@link BpmnNodeType#BOUNDARY_TIMER_EVENT}. */
+    public String getAttachedToNodeId() {
+        return attachedToNodeId;
+    }
+
+    /** ISO-8601 duration (e.g. {@code PT24H}), relative to task creation - null unless this boundary timer uses {@code timeDuration}. */
+    public String getTimerDuration() {
+        return timerDuration;
+    }
+
+    /** ISO-8601 date-time - null unless this boundary timer uses {@code timeDate}. */
+    public String getTimerDate() {
+        return timerDate;
     }
 }

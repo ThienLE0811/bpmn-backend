@@ -153,6 +153,28 @@ public class PostgresTaskRepository implements TaskRepository {
     }
 
     @Override
+    public List<Task> findDueTimers(LocalDateTime now) {
+        String sql = "SELECT * FROM tasks WHERE due_date IS NOT NULL AND due_date <= ? AND status IN ('PENDING', 'CLAIMED')";
+        List<Task> list = new ArrayList<>();
+
+        try (Connection conn = DatabaseConfig.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setTimestamp(1, Timestamp.valueOf(now));
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToTask(rs));
+                }
+            }
+            return list;
+        } catch (SQLException e) {
+            logger.error("Failed to fetch due timer tasks: {}", e.getMessage(), e);
+            throw new RuntimeException("Database error fetching due timer tasks", e);
+        }
+    }
+
+    @Override
     public List<Task> findAll() {
         String sql = "SELECT * FROM tasks ORDER BY created_at DESC";
         List<Task> list = new ArrayList<>();

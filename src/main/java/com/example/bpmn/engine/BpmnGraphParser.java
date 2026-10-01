@@ -10,6 +10,8 @@ import org.xml.sax.InputSource;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,11 +20,12 @@ import java.util.Map;
 /**
  * Parses a BPMN 2.0 XML document into an in-memory {@link BpmnProcessDefinition} graph
  * that {@link ProcessEngine} can walk. Understands startEvent, endEvent, userTask,
- * exclusiveGateway, parallelGateway, inclusiveGateway, serviceTask, businessRuleTask
- * and sequenceFlow - any other flow-node type (subprocess, script task, timer/boundary
- * events, etc.) is silently skipped when building nodes, which means a sequenceFlow
- * referencing one will fail the "unknown node" validation below with a clear error
- * rather than executing incorrectly.
+ * exclusiveGateway, parallelGateway, inclusiveGateway, serviceTask, businessRuleTask,
+ * sequenceFlow, and interrupting timer boundaryEvents (attachedToRef + timeDuration/
+ * timeDate) - any other flow-node type (subprocess, script task, message/signal events,
+ * non-interrupting boundary events, etc.) is silently skipped when building nodes, which
+ * means a sequenceFlow referencing one will fail the "unknown node" validation below with
+ * a clear error rather than executing incorrectly.
  */
 public class BpmnGraphParser {
     private static final String CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn";
@@ -95,6 +98,22 @@ public class BpmnGraphParser {
                     nodesById.put(id, new BpmnNode(id, BpmnNodeType.BUSINESS_RULE_TASK,
                             nullIfBlank(element.getAttribute("name")), null, decisionRef, resultVariable));
                 }
+                case "boundaryEvent" -> {
+                    String id = element.getAttribute("id");
+                    String attachedToRef = nullIfBlank(element.getAttribute("attachedToRef"));
+                    if (attachedToRef == null) {
+                        throw new AppException("Boundary event " + id + " has no attachedToRef", 400);
+                    }
+                    String cancelActivity = element.getAttribute("cancelActivity");
+                    if ("false".equalsIgnoreCase(cancelActivity)) {
+                        throw new AppException("Boundary event " + id
+                                + " has cancelActivity=false - non-interrupting boundary events are not supported yet", 400);
+                    }
+                    TimerDefinition timer = parseTimerEventDefinition(element, id);
+                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.BOUNDARY_TIMER_EVENT,
+                            nullIfBlank(element.getAttribute("name")), null, attachedToRef,
+                            timer.duration(), timer.date()));
+                }
                 case "sequenceFlow" -> flows.add(parseSequenceFlow(element));
                 default -> {
                     // Unsupported element type for v1 - intentionally not added as a node.
@@ -122,8 +141,88 @@ public class BpmnGraphParser {
             incomingFlowsByNodeId.computeIfAbsent(flow.getTargetRef(), k -> new ArrayList<>()).add(flow);
         }
 
+        Map<String, BpmnNode> boundaryTimersByAttachedToNodeId = new HashMap<>();
+        for (BpmnNode node : nodesById.values()) {
+            if (node.getType() != BpmnNodeType.BOUNDARY_TIMER_EVENT) {
+                continue;
+            }
+            if (!nodesById.containsKey(node.getAttachedToNodeId())) {
+                throw new AppException("Boundary event " + node.getId() + " is attached to unknown node: " + node.getAttachedToNodeId(), 400);
+            }
+            if (boundaryTimersByAttachedToNodeId.containsKey(node.getAttachedToNodeId())) {
+                throw new AppException("Node " + node.getAttachedToNodeId()
+                        + " has more than one boundary timer event attached - only one is supported per task", 400);
+            }
+            boundaryTimersByAttachedToNodeId.put(node.getAttachedToNodeId(), node);
+        }
+
         String processId = nullIfBlank(processElement.getAttribute("id"));
-        return new BpmnProcessDefinition(processId, nodesById, outgoingFlowsByNodeId, incomingFlowsByNodeId, startNodeId);
+        return new BpmnProcessDefinition(processId, nodesById, outgoingFlowsByNodeId, incomingFlowsByNodeId,
+                boundaryTimersByAttachedToNodeId, startNodeId);
+    }
+
+    private record TimerDefinition(String duration, String date) {
+    }
+
+    /** Reads the {@code <timerEventDefinition>} child of a boundary event and validates its {@code timeDuration}/{@code timeDate} eagerly. */
+    private static TimerDefinition parseTimerEventDefinition(Element boundaryEventElement, String boundaryEventId) {
+        Element timerEventDefinition = null;
+        NodeList children = boundaryEventElement.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            Element childElement = (Element) child;
+            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
+            if ("timerEventDefinition".equals(localName)) {
+                timerEventDefinition = childElement;
+                break;
+            }
+        }
+        if (timerEventDefinition == null) {
+            throw new AppException("Boundary event " + boundaryEventId
+                    + " has no timerEventDefinition - only timer boundary events are supported", 400);
+        }
+
+        String duration = null;
+        String date = null;
+        NodeList timerChildren = timerEventDefinition.getChildNodes();
+        for (int i = 0; i < timerChildren.getLength(); i++) {
+            Node child = timerChildren.item(i);
+            if (child.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            Element childElement = (Element) child;
+            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
+            String text = stripExpressionWrapper(childElement.getTextContent());
+            if ("timeDuration".equals(localName)) {
+                duration = text;
+            } else if ("timeDate".equals(localName)) {
+                date = text;
+            }
+        }
+
+        if (duration == null && date == null) {
+            throw new AppException("Boundary event " + boundaryEventId
+                    + " timerEventDefinition has neither timeDuration nor timeDate", 400);
+        }
+        if (duration != null && date != null) {
+            throw new AppException("Boundary event " + boundaryEventId
+                    + " timerEventDefinition has both timeDuration and timeDate - only one is supported", 400);
+        }
+
+        try {
+            if (duration != null) {
+                Duration.parse(duration);
+            } else {
+                LocalDateTime.parse(date);
+            }
+        } catch (Exception e) {
+            throw new AppException("Boundary event " + boundaryEventId + " has an invalid timer value: " + e.getMessage(), 400);
+        }
+
+        return new TimerDefinition(duration, date);
     }
 
     private static BpmnSequenceFlow parseSequenceFlow(Element element) {
