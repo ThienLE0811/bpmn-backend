@@ -72,57 +72,63 @@ Chạy test: `mvn test`.
 Tất cả route yêu cầu JWT (`Authorization: Bearer <token>`) qua `authInterceptor`/`RequestContext`, trừ 3 route auth dưới đây (`postPublic`).
 
 ### Auth (`/api/auth`)
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| POST | `/api/auth/login` | Đăng nhập, trả access token (JWT) + refresh token |
-| POST | `/api/auth/refresh` | Cấp access token mới từ refresh token còn hạn |
-| POST | `/api/auth/logout` | Revoke refresh token |
+
+| Method | Endpoint            | Mô tả                                             |
+| ------ | ------------------- | ------------------------------------------------- |
+| POST   | `/api/auth/login`   | Đăng nhập, trả access token (JWT) + refresh token |
+| POST   | `/api/auth/refresh` | Cấp access token mới từ refresh token còn hạn     |
+| POST   | `/api/auth/logout`  | Revoke refresh token                              |
 
 ### BPMN Process (`/api/bpmn-processes`)
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| GET | `/api/bpmn-processes` | List (phân trang) |
-| POST | `/api/bpmn-processes` | Tạo process definition mới (kèm BPMN XML) |
-| GET | `/api/bpmn-processes/key/:key` | Lấy theo `processKey` |
-| GET | `/api/bpmn-processes/:id` | Lấy theo id |
-| PUT | `/api/bpmn-processes/:id` | Cập nhật (tự tăng version, lưu snapshot vào `bpmn_process_versions`) |
-| GET | `/api/bpmn-processes/:id/versions` | Lịch sử version |
-| GET | `/api/bpmn-processes/:id/versions/:version` | Snapshot XML của một version cụ thể |
-| DELETE | `/api/bpmn-processes/:id` | Xoá |
+
+| Method | Endpoint                                    | Mô tả                                                                |
+| ------ | ------------------------------------------- | -------------------------------------------------------------------- |
+| GET    | `/api/bpmn-processes`                       | List (phân trang)                                                    |
+| POST   | `/api/bpmn-processes`                       | Tạo process definition mới (kèm BPMN XML)                            |
+| GET    | `/api/bpmn-processes/key/:key`              | Lấy theo `processKey`                                                |
+| GET    | `/api/bpmn-processes/:id`                   | Lấy theo id                                                          |
+| PUT    | `/api/bpmn-processes/:id`                   | Cập nhật (tự tăng version, lưu snapshot vào `bpmn_process_versions`) |
+| GET    | `/api/bpmn-processes/:id/versions`          | Lịch sử version                                                      |
+| GET    | `/api/bpmn-processes/:id/versions/:version` | Snapshot XML của một version cụ thể                                  |
+| DELETE | `/api/bpmn-processes/:id`                   | Xoá                                                                  |
 
 ### DMN Decision (`/api/dmn-decisions`)
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| GET | `/api/dmn-decisions` | List (phân trang) |
-| POST | `/api/dmn-decisions` | Tạo decision table mới (DMN XML) |
-| GET | `/api/dmn-decisions/key/:key` | Lấy theo `decisionKey` |
-| GET | `/api/dmn-decisions/:id` | Lấy theo id |
-| PUT | `/api/dmn-decisions/:id` | Cập nhật (tự tăng version) |
-| DELETE | `/api/dmn-decisions/:id` | Xoá |
+
+| Method | Endpoint                      | Mô tả                            |
+| ------ | ----------------------------- | -------------------------------- |
+| GET    | `/api/dmn-decisions`          | List (phân trang)                |
+| POST   | `/api/dmn-decisions`          | Tạo decision table mới (DMN XML) |
+| GET    | `/api/dmn-decisions/key/:key` | Lấy theo `decisionKey`           |
+| GET    | `/api/dmn-decisions/:id`      | Lấy theo id                      |
+| PUT    | `/api/dmn-decisions/:id`      | Cập nhật (tự tăng version)       |
+| DELETE | `/api/dmn-decisions/:id`      | Xoá                              |
 
 ### Process Instance / "Case" (`/api/process-instances`)
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| GET | `/api/process-instances` | List (phân trang) |
-| POST | `/api/process-instances` | Start một case mới từ `processId` (+ biến khởi tạo), engine tự advance tới user task đầu tiên (hoặc COMPLETED ngay nếu không có user task nào) |
-| GET | `/api/process-instances/:id` | Lấy chi tiết case |
+
+| Method | Endpoint                     | Mô tả                                                                                                                                          |
+| ------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/process-instances`     | List (phân trang)                                                                                                                              |
+| POST   | `/api/process-instances`     | Start một case mới từ `processId` (+ biến khởi tạo), engine tự advance tới user task đầu tiên (hoặc COMPLETED ngay nếu không có user task nào) |
+| GET    | `/api/process-instances/:id` | Lấy chi tiết case                                                                                                                              |
 
 ### Task (`/api/tasks`)
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| GET | `/api/tasks?status=&mine=` | List, filter theo status và/hoặc chỉ task của người gọi |
-| GET | `/api/tasks/:id` | Chi tiết task |
-| POST | `/api/tasks/:id/claim` | Nhận task (PENDING → CLAIMED) |
-| POST | `/api/tasks/:id/complete` | Hoàn thành task (kèm biến), engine advance tiếp tới task/gateway kế |
+
+| Method | Endpoint                   | Mô tả                                                               |
+| ------ | -------------------------- | ------------------------------------------------------------------- |
+| GET    | `/api/tasks?status=&mine=` | List, filter theo status và/hoặc chỉ task của người gọi             |
+| GET    | `/api/tasks/:id`           | Chi tiết task                                                       |
+| POST   | `/api/tasks/:id/claim`     | Nhận task (PENDING → CLAIMED)                                       |
+| POST   | `/api/tasks/:id/complete`  | Hoàn thành task (kèm biến), engine advance tiếp tới task/gateway kế |
 
 ### User (`/api/users`, ADMIN cho phần đổi role)
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| GET | `/api/users` | List (phân trang) |
-| POST | `/api/users` | Tạo user |
-| GET | `/api/users/:id` | Chi tiết |
-| PUT | `/api/users/:id` | Cập nhật |
-| DELETE | `/api/users/:id` | Xoá |
+
+| Method | Endpoint         | Mô tả             |
+| ------ | ---------------- | ----------------- |
+| GET    | `/api/users`     | List (phân trang) |
+| POST   | `/api/users`     | Tạo user          |
+| GET    | `/api/users/:id` | Chi tiết          |
+| PUT    | `/api/users/:id` | Cập nhật          |
+| DELETE | `/api/users/:id` | Xoá               |
 
 ---
 
@@ -192,3 +198,5 @@ Gọi thử: `curl https://bpmn-backend-xxxx.onrender.com/health` → `{"status"
 docker build -t bpmn-backend .
 docker run -p 8080:8080 -e DATABASE_URL="postgresql://user:pass@host/db?sslmode=require" bpmn-backend
 ```
+
+###
