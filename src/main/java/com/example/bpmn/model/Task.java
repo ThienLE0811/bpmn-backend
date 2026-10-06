@@ -16,6 +16,7 @@ public class Task {
     private String completedBy;
     private LocalDateTime completedAt;
     private LocalDateTime dueDate;
+    private Integer timerRepeatsRemaining;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -135,6 +136,15 @@ public class Task {
 
     public void setDueDate(LocalDateTime dueDate) {
         this.dueDate = dueDate;
+    }
+
+    /** {@code null} = not a repeating boundary timer (or already exhausted/fired once); {@code -1} = unbounded {@code timeCycle}; {@code N > 0} = N occurrences (including the upcoming one) still to fire. */
+    public Integer getTimerRepeatsRemaining() {
+        return timerRepeatsRemaining;
+    }
+
+    public void setTimerRepeatsRemaining(Integer timerRepeatsRemaining) {
+        this.timerRepeatsRemaining = timerRepeatsRemaining;
     }
 
     public LocalDateTime getCreatedAt() {

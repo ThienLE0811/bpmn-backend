@@ -20,8 +20,8 @@ public class PostgresTaskRepository implements TaskRepository {
         String sql = """
             INSERT INTO tasks
                 (id, process_id, process_instance_id, node_id, name, description, assignee_id, status,
-                 claimed_by, claimed_at, completed_by, completed_at, due_date, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 claimed_by, claimed_at, completed_by, completed_at, due_date, timer_repeats_remaining, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE
             SET process_id = EXCLUDED.process_id,
                 process_instance_id = EXCLUDED.process_instance_id,
@@ -35,6 +35,7 @@ public class PostgresTaskRepository implements TaskRepository {
                 completed_by = EXCLUDED.completed_by,
                 completed_at = EXCLUDED.completed_at,
                 due_date = EXCLUDED.due_date,
+                timer_repeats_remaining = EXCLUDED.timer_repeats_remaining,
                 updated_at = EXCLUDED.updated_at
         """;
 
@@ -54,8 +55,13 @@ public class PostgresTaskRepository implements TaskRepository {
             stmt.setString(11, task.getCompletedBy());
             stmt.setTimestamp(12, task.getCompletedAt() != null ? Timestamp.valueOf(task.getCompletedAt()) : null);
             stmt.setTimestamp(13, task.getDueDate() != null ? Timestamp.valueOf(task.getDueDate()) : null);
-            stmt.setTimestamp(14, task.getCreatedAt() != null ? Timestamp.valueOf(task.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
-            stmt.setTimestamp(15, task.getUpdatedAt() != null ? Timestamp.valueOf(task.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            if (task.getTimerRepeatsRemaining() != null) {
+                stmt.setInt(14, task.getTimerRepeatsRemaining());
+            } else {
+                stmt.setNull(14, Types.INTEGER);
+            }
+            stmt.setTimestamp(15, task.getCreatedAt() != null ? Timestamp.valueOf(task.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setTimestamp(16, task.getUpdatedAt() != null ? Timestamp.valueOf(task.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
 
             stmt.executeUpdate();
             return task;
@@ -234,6 +240,11 @@ public class PostgresTaskRepository implements TaskRepository {
         Timestamp dueDateTs = rs.getTimestamp("due_date");
         if (dueDateTs != null) {
             task.setDueDate(dueDateTs.toLocalDateTime());
+        }
+
+        int timerRepeatsRemaining = rs.getInt("timer_repeats_remaining");
+        if (!rs.wasNull()) {
+            task.setTimerRepeatsRemaining(timerRepeatsRemaining);
         }
 
         Timestamp createdAtTs = rs.getTimestamp("created_at");

@@ -122,8 +122,8 @@ class BpmnGraphParserTest {
     }
 
     @Test
-    @DisplayName("Should reject a non-interrupting boundary event (cancelActivity=false)")
-    void rejectsNonInterruptingBoundaryEvent() {
+    @DisplayName("Should parse a non-interrupting boundary event (cancelActivity=false) with a plain timeDuration")
+    void parsesNonInterruptingBoundaryTimerWithDuration() {
         String xml = """
                 <?xml version="1.0" encoding="UTF-8"?>
                 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
@@ -141,8 +141,94 @@ class BpmnGraphParserTest {
                 </definitions>
                 """;
 
+        BpmnProcessDefinition def = BpmnGraphParser.parse(xml);
+        BpmnNode boundary = def.getNode("boundary1");
+        assertFalse(boundary.isInterrupting());
+        assertEquals("PT1H", boundary.getTimerDuration());
+        assertNull(boundary.getTimerCycle());
+    }
+
+    @Test
+    @DisplayName("Should default a boundary event to interrupting when cancelActivity is absent")
+    void defaultsBoundaryTimerToInterrupting() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.BOUNDARY_TIMER_PROCESS_XML);
+        assertTrue(def.getNode("boundary1").isInterrupting());
+    }
+
+    @Test
+    @DisplayName("Should parse a non-interrupting boundary event with a bounded timeCycle")
+    void parsesNonInterruptingBoundaryTimerWithBoundedCycle() {
+        String xml = nonInterruptingCycleBoundaryXml("R3/PT10M");
+
+        BpmnProcessDefinition def = BpmnGraphParser.parse(xml);
+        BpmnNode boundary = def.getNode("boundary1");
+        assertFalse(boundary.isInterrupting());
+        assertEquals("R3/PT10M", boundary.getTimerCycle());
+        assertNull(boundary.getTimerDuration());
+        assertNull(boundary.getTimerDate());
+    }
+
+    @Test
+    @DisplayName("Should parse a non-interrupting boundary event with an unbounded timeCycle")
+    void parsesNonInterruptingBoundaryTimerWithUnboundedCycle() {
+        String xml = nonInterruptingCycleBoundaryXml("R/PT5M");
+
+        BpmnProcessDefinition def = BpmnGraphParser.parse(xml);
+        assertEquals("R/PT5M", def.getNode("boundary1").getTimerCycle());
+    }
+
+    @Test
+    @DisplayName("Should reject timeCycle on an interrupting boundary event")
+    void rejectsInterruptingBoundaryTimerWithTimeCycle() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                    <userTask id="task1" />
+                    <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                    <endEvent id="end1" />
+                    <boundaryEvent id="boundary1" attachedToRef="task1">
+                      <timerEventDefinition><timeCycle>R3/PT10M</timeCycle></timerEventDefinition>
+                    </boundaryEvent>
+                    <sequenceFlow id="f3" sourceRef="boundary1" targetRef="end1" />
+                  </process>
+                </definitions>
+                """;
+
         AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
         assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should reject a malformed timeCycle value")
+    void rejectsMalformedTimeCycle() {
+        assertEquals(400, assertThrows(AppException.class,
+                () -> BpmnGraphParser.parse(nonInterruptingCycleBoundaryXml("PT10M"))).getStatusCode());
+        assertEquals(400, assertThrows(AppException.class,
+                () -> BpmnGraphParser.parse(nonInterruptingCycleBoundaryXml("R3/bogus"))).getStatusCode());
+        assertEquals(400, assertThrows(AppException.class,
+                () -> BpmnGraphParser.parse(nonInterruptingCycleBoundaryXml("R0/PT10M"))).getStatusCode());
+    }
+
+    private static String nonInterruptingCycleBoundaryXml(String timeCycle) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                    <userTask id="task1" />
+                    <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                    <endEvent id="end1" />
+                    <boundaryEvent id="boundary1" attachedToRef="task1" cancelActivity="false">
+                      <timerEventDefinition><timeCycle>%s</timeCycle></timerEventDefinition>
+                    </boundaryEvent>
+                    <sequenceFlow id="f3" sourceRef="boundary1" targetRef="end1" />
+                  </process>
+                </definitions>
+                """.formatted(timeCycle);
     }
 
     @Test

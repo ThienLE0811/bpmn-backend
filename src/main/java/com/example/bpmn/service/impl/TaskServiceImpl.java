@@ -8,6 +8,7 @@ import com.example.bpmn.engine.BpmnGraphParser;
 import com.example.bpmn.engine.BpmnNode;
 import com.example.bpmn.engine.BpmnProcessDefinition;
 import com.example.bpmn.engine.ProcessEngine;
+import com.example.bpmn.engine.TimerCycle;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.TaskMapper;
 import com.example.bpmn.model.ProcessInstance;
@@ -165,7 +166,10 @@ public class TaskServiceImpl implements TaskService {
 
         Map<String, Object> variables = new HashMap<>(instance.getVariables() != null ? instance.getVariables() : Map.of());
 
-        current.setStatus("CANCELLED");
+        if (boundaryEvent.isInterrupting()) {
+            current.setStatus("CANCELLED");
+        }
+        rescheduleOrClearTimer(current, boundaryEvent, now);
         current.setUpdatedAt(now);
         taskRepository.save(current);
 
@@ -173,6 +177,33 @@ public class TaskServiceImpl implements TaskService {
 
         logger.info("Boundary timer fired for task {} (node {}), process instance {} now {}",
                 current.getId(), current.getNodeId(), instance.getId(), instance.getStatus());
+    }
+
+    /**
+     * After a boundary timer fires, decides whether it should fire again. {@code null} remaining
+     * means one-shot (timeDuration/timeDate, or an already-exhausted timeCycle) - clear the due
+     * date so it never fires again. {@code -1} means an unbounded timeCycle - always reschedule.
+     * A positive count is decremented; it reschedules while repeats remain, otherwise stops.
+     */
+    private void rescheduleOrClearTimer(Task task, BpmnNode boundaryEvent, LocalDateTime now) {
+        Integer remaining = task.getTimerRepeatsRemaining();
+        if (remaining == null) {
+            task.setDueDate(null);
+            return;
+        }
+        TimerCycle cycle = TimerCycle.parse(boundaryEvent.getTimerCycle());
+        if (remaining == -1) {
+            task.setDueDate(now.plus(cycle.interval()));
+            return;
+        }
+        int next = remaining - 1;
+        if (next > 0) {
+            task.setDueDate(now.plus(cycle.interval()));
+            task.setTimerRepeatsRemaining(next);
+        } else {
+            task.setDueDate(null);
+            task.setTimerRepeatsRemaining(null);
+        }
     }
 
     private BpmnProcessDefinition loadDefinition(ProcessInstance instance) {
@@ -237,17 +268,32 @@ public class TaskServiceImpl implements TaskService {
         next.setCreatedAt(now);
         next.setUpdatedAt(now);
         next.setDueDate(computeBoundaryTimerDueDate(definition, nodeId, now));
+        next.setTimerRepeatsRemaining(computeInitialTimerRepeats(definition, nodeId));
         taskRepository.save(next);
     }
 
-    /** Computes when this task's attached boundary timer should fire, or null if it has none. */
+    /** Computes when this task's attached boundary timer should first fire, or null if it has none. */
     static LocalDateTime computeBoundaryTimerDueDate(BpmnProcessDefinition definition, String nodeId, LocalDateTime now) {
         BpmnNode boundaryEvent = definition.getBoundaryTimerFor(nodeId);
         if (boundaryEvent == null) {
             return null;
         }
-        return boundaryEvent.getTimerDate() != null
-                ? LocalDateTime.parse(boundaryEvent.getTimerDate())
-                : now.plus(Duration.parse(boundaryEvent.getTimerDuration()));
+        if (boundaryEvent.getTimerDate() != null) {
+            return LocalDateTime.parse(boundaryEvent.getTimerDate());
+        }
+        if (boundaryEvent.getTimerDuration() != null) {
+            return now.plus(Duration.parse(boundaryEvent.getTimerDuration()));
+        }
+        return now.plus(TimerCycle.parse(boundaryEvent.getTimerCycle()).interval());
+    }
+
+    /** {@code null} if this task has no boundary timer or it isn't a timeCycle; {@code -1} if the cycle is unbounded; else the bounded repeat count. */
+    static Integer computeInitialTimerRepeats(BpmnProcessDefinition definition, String nodeId) {
+        BpmnNode boundaryEvent = definition.getBoundaryTimerFor(nodeId);
+        if (boundaryEvent == null || boundaryEvent.getTimerCycle() == null) {
+            return null;
+        }
+        Integer repeatCount = TimerCycle.parse(boundaryEvent.getTimerCycle()).repeatCount();
+        return repeatCount != null ? repeatCount : -1;
     }
 }

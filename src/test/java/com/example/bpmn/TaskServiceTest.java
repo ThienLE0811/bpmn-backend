@@ -109,6 +109,66 @@ class TaskServiceTest {
             </definitions>
             """;
 
+    private static final String NON_INTERRUPTING_BOUNDARY_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="non_interrupting_boundary_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                <endEvent id="end1" name="Approved" />
+                <boundaryEvent id="boundary1" attachedToRef="task1" cancelActivity="false">
+                  <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                </boundaryEvent>
+                <sequenceFlow id="f3" sourceRef="boundary1" targetRef="task2" />
+                <userTask id="task2" name="Escalate" />
+                <sequenceFlow id="f4" sourceRef="task2" targetRef="end2" />
+                <endEvent id="end2" name="Escalated" />
+              </process>
+            </definitions>
+            """;
+
+    private static final String BOUNDED_CYCLE_BOUNDARY_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="bounded_cycle_boundary_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                <endEvent id="end1" name="Approved" />
+                <boundaryEvent id="boundary1" attachedToRef="task1" cancelActivity="false">
+                  <timerEventDefinition><timeCycle>R2/PT10M</timeCycle></timerEventDefinition>
+                </boundaryEvent>
+                <sequenceFlow id="f3" sourceRef="boundary1" targetRef="task2" />
+                <userTask id="task2" name="Remind" />
+                <sequenceFlow id="f4" sourceRef="task2" targetRef="end2" />
+                <endEvent id="end2" name="Reminded" />
+              </process>
+            </definitions>
+            """;
+
+    private static final String UNBOUNDED_CYCLE_BOUNDARY_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="unbounded_cycle_boundary_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="end1" />
+                <endEvent id="end1" name="Approved" />
+                <boundaryEvent id="boundary1" attachedToRef="task1" cancelActivity="false">
+                  <timerEventDefinition><timeCycle>R/PT10M</timeCycle></timerEventDefinition>
+                </boundaryEvent>
+                <sequenceFlow id="f3" sourceRef="boundary1" targetRef="task2" />
+                <userTask id="task2" name="Remind" />
+                <sequenceFlow id="f4" sourceRef="task2" targetRef="end2" />
+                <endEvent id="end2" name="Reminded" />
+              </process>
+            </definitions>
+            """;
+
     private TaskService taskService;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final Map<String, ProcessInstance> instances = new ConcurrentHashMap<>();
@@ -562,6 +622,86 @@ class TaskServiceTest {
 
         assertEquals("COMPLETED", tasks.get(task.getId()).getStatus());
         assertTrue(tasks.values().stream().noneMatch(t -> "task2".equals(t.getNodeId())));
+    }
+
+    @Test
+    @DisplayName("Should keep a non-interrupting boundary timer's task open and only fork the escalation branch")
+    void testProcessDueTimersNonInterruptingKeepsTaskOpenAndEscalates() {
+        ProcessInstance instance = seedInstance("non_interrupting_boundary_timer_process", 1,
+                NON_INTERRUPTING_BOUNDARY_TIMER_PROCESS_XML, "task1");
+        Task task = seedTask(instance, "task1", "PENDING", null);
+        task.setDueDate(java.time.LocalDateTime.now().minusMinutes(5));
+
+        taskService.processDueTimers();
+
+        Task updatedTask = tasks.get(task.getId());
+        assertEquals("PENDING", updatedTask.getStatus());
+        assertNull(updatedTask.getDueDate());
+
+        List<Task> escalationTasks = tasks.values().stream()
+                .filter(t -> "task2".equals(t.getNodeId()))
+                .toList();
+        assertEquals(1, escalationTasks.size());
+        assertEquals("PENDING", escalationTasks.get(0).getStatus());
+
+        ProcessInstance updatedInstance = instances.get(instance.getId());
+        assertEquals("RUNNING", updatedInstance.getStatus());
+
+        // Firing again without a new due date must not create a second escalation task.
+        taskService.processDueTimers();
+        assertEquals(1, tasks.values().stream().filter(t -> "task2".equals(t.getNodeId())).count());
+    }
+
+    @Test
+    @DisplayName("Should fire a bounded timeCycle exactly N times then stop rescheduling")
+    void testProcessDueTimersBoundedCycleFiresExactlyNTimesThenStops() {
+        ProcessInstance instance = seedInstance("bounded_cycle_boundary_timer_process", 1,
+                BOUNDED_CYCLE_BOUNDARY_TIMER_PROCESS_XML, "task1");
+        Task task = seedTask(instance, "task1", "PENDING", null);
+        task.setTimerRepeatsRemaining(2);
+        task.setDueDate(java.time.LocalDateTime.now().minusMinutes(1));
+
+        taskService.processDueTimers();
+        Task afterFirstFire = tasks.get(task.getId());
+        assertEquals("PENDING", afterFirstFire.getStatus());
+        assertEquals(1, afterFirstFire.getTimerRepeatsRemaining());
+        assertNotNull(afterFirstFire.getDueDate());
+        assertTrue(afterFirstFire.getDueDate().isAfter(java.time.LocalDateTime.now()));
+        assertEquals(1, tasks.values().stream().filter(t -> "task2".equals(t.getNodeId())).count());
+
+        afterFirstFire.setDueDate(java.time.LocalDateTime.now().minusMinutes(1));
+        taskService.processDueTimers();
+        Task afterSecondFire = tasks.get(task.getId());
+        assertEquals("PENDING", afterSecondFire.getStatus());
+        assertNull(afterSecondFire.getTimerRepeatsRemaining());
+        assertNull(afterSecondFire.getDueDate());
+        assertEquals(2, tasks.values().stream().filter(t -> "task2".equals(t.getNodeId())).count());
+
+        // Exhausted: no due date left, so a third poll must not fire again.
+        taskService.processDueTimers();
+        assertEquals(2, tasks.values().stream().filter(t -> "task2".equals(t.getNodeId())).count());
+    }
+
+    @Test
+    @DisplayName("Should keep rescheduling an unbounded timeCycle indefinitely")
+    void testProcessDueTimersUnboundedCycleKeepsRescheduling() {
+        ProcessInstance instance = seedInstance("unbounded_cycle_boundary_timer_process", 1,
+                UNBOUNDED_CYCLE_BOUNDARY_TIMER_PROCESS_XML, "task1");
+        Task task = seedTask(instance, "task1", "PENDING", null);
+        task.setTimerRepeatsRemaining(-1);
+        task.setDueDate(java.time.LocalDateTime.now().minusMinutes(1));
+
+        for (int i = 1; i <= 3; i++) {
+            taskService.processDueTimers();
+            Task current = tasks.get(task.getId());
+            assertEquals("PENDING", current.getStatus());
+            assertEquals(-1, current.getTimerRepeatsRemaining());
+            assertNotNull(current.getDueDate());
+            assertTrue(current.getDueDate().isAfter(java.time.LocalDateTime.now()));
+            assertEquals(i, tasks.values().stream().filter(t -> "task2".equals(t.getNodeId())).count());
+
+            current.setDueDate(java.time.LocalDateTime.now().minusMinutes(1));
+        }
     }
 
     @Test

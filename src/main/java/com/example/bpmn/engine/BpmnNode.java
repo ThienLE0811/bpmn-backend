@@ -11,6 +11,8 @@ public class BpmnNode {
     private final String attachedToNodeId;
     private final String timerDuration;
     private final String timerDate;
+    private final String timerCycle;
+    private final boolean interrupting;
 
     public BpmnNode(String id, BpmnNodeType type, String name, String defaultFlowId) {
         this(id, type, name, defaultFlowId, null, null);
@@ -27,11 +29,13 @@ public class BpmnNode {
         this.attachedToNodeId = null;
         this.timerDuration = null;
         this.timerDate = null;
+        this.timerCycle = null;
+        this.interrupting = true;
     }
 
-    /** Only meaningful for {@link BpmnNodeType#BOUNDARY_TIMER_EVENT} - exactly one of {@code timerDuration}/{@code timerDate} is set. */
+    /** Only meaningful for {@link BpmnNodeType#BOUNDARY_TIMER_EVENT} - exactly one of {@code timerDuration}/{@code timerDate}/{@code timerCycle} is set. */
     public BpmnNode(String id, BpmnNodeType type, String name, String defaultFlowId,
-                     String attachedToNodeId, String timerDuration, String timerDate) {
+                     String attachedToNodeId, String timerDuration, String timerDate, String timerCycle, boolean interrupting) {
         this.id = id;
         this.type = type;
         this.name = name;
@@ -41,6 +45,8 @@ public class BpmnNode {
         this.attachedToNodeId = attachedToNodeId;
         this.timerDuration = timerDuration;
         this.timerDate = timerDate;
+        this.timerCycle = timerCycle;
+        this.interrupting = interrupting;
     }
 
     public String getId() {
@@ -82,5 +88,15 @@ public class BpmnNode {
     /** ISO-8601 date-time - null unless this boundary timer uses {@code timeDate}. */
     public String getTimerDate() {
         return timerDate;
+    }
+
+    /** ISO-8601 repeating interval (e.g. {@code R3/PT10M}, {@code R/PT10M}) - null unless this boundary timer uses {@code timeCycle}. */
+    public String getTimerCycle() {
+        return timerCycle;
+    }
+
+    /** {@code cancelActivity} - true (default) unless this is a non-interrupting boundary event. Always true for non-boundary-event nodes. */
+    public boolean isInterrupting() {
+        return interrupting;
     }
 }

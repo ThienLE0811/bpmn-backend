@@ -21,11 +21,12 @@ import java.util.Map;
  * Parses a BPMN 2.0 XML document into an in-memory {@link BpmnProcessDefinition} graph
  * that {@link ProcessEngine} can walk. Understands startEvent, endEvent, userTask,
  * exclusiveGateway, parallelGateway, inclusiveGateway, serviceTask, businessRuleTask,
- * sequenceFlow, and interrupting timer boundaryEvents (attachedToRef + timeDuration/
- * timeDate) - any other flow-node type (subprocess, script task, message/signal events,
- * non-interrupting boundary events, etc.) is silently skipped when building nodes, which
- * means a sequenceFlow referencing one will fail the "unknown node" validation below with
- * a clear error rather than executing incorrectly.
+ * sequenceFlow, and timer boundaryEvents (attachedToRef + timeDuration/timeDate/timeCycle,
+ * either interrupting or non-interrupting via cancelActivity) - any other flow-node type
+ * (subprocess, script task, message/signal events, standalone timer start/intermediate
+ * events, etc.) is silently skipped when building nodes, which means a sequenceFlow
+ * referencing one will fail the "unknown node" validation below with a clear error rather
+ * than executing incorrectly.
  */
 public class BpmnGraphParser {
     private static final String CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn";
@@ -104,15 +105,15 @@ public class BpmnGraphParser {
                     if (attachedToRef == null) {
                         throw new AppException("Boundary event " + id + " has no attachedToRef", 400);
                     }
-                    String cancelActivity = element.getAttribute("cancelActivity");
-                    if ("false".equalsIgnoreCase(cancelActivity)) {
-                        throw new AppException("Boundary event " + id
-                                + " has cancelActivity=false - non-interrupting boundary events are not supported yet", 400);
-                    }
+                    boolean interrupting = !"false".equalsIgnoreCase(element.getAttribute("cancelActivity"));
                     TimerDefinition timer = parseTimerEventDefinition(element, id);
+                    if (timer.cycle() != null && interrupting) {
+                        throw new AppException("Boundary event " + id
+                                + " has timeCycle but is interrupting - repeating boundary timers require cancelActivity=\"false\"", 400);
+                    }
                     nodesById.put(id, new BpmnNode(id, BpmnNodeType.BOUNDARY_TIMER_EVENT,
                             nullIfBlank(element.getAttribute("name")), null, attachedToRef,
-                            timer.duration(), timer.date()));
+                            timer.duration(), timer.date(), timer.cycle(), interrupting));
                 }
                 case "sequenceFlow" -> flows.add(parseSequenceFlow(element));
                 default -> {
@@ -161,10 +162,10 @@ public class BpmnGraphParser {
                 boundaryTimersByAttachedToNodeId, startNodeId);
     }
 
-    private record TimerDefinition(String duration, String date) {
+    private record TimerDefinition(String duration, String date, String cycle) {
     }
 
-    /** Reads the {@code <timerEventDefinition>} child of a boundary event and validates its {@code timeDuration}/{@code timeDate} eagerly. */
+    /** Reads the {@code <timerEventDefinition>} child of a boundary event and validates its {@code timeDuration}/{@code timeDate}/{@code timeCycle} eagerly. */
     private static TimerDefinition parseTimerEventDefinition(Element boundaryEventElement, String boundaryEventId) {
         Element timerEventDefinition = null;
         NodeList children = boundaryEventElement.getChildNodes();
@@ -187,6 +188,7 @@ public class BpmnGraphParser {
 
         String duration = null;
         String date = null;
+        String cycle = null;
         NodeList timerChildren = timerEventDefinition.getChildNodes();
         for (int i = 0; i < timerChildren.getLength(); i++) {
             Node child = timerChildren.item(i);
@@ -200,29 +202,36 @@ public class BpmnGraphParser {
                 duration = text;
             } else if ("timeDate".equals(localName)) {
                 date = text;
+            } else if ("timeCycle".equals(localName)) {
+                cycle = text;
             }
         }
 
-        if (duration == null && date == null) {
+        int specifiedCount = (duration != null ? 1 : 0) + (date != null ? 1 : 0) + (cycle != null ? 1 : 0);
+        if (specifiedCount == 0) {
             throw new AppException("Boundary event " + boundaryEventId
-                    + " timerEventDefinition has neither timeDuration nor timeDate", 400);
+                    + " timerEventDefinition has none of timeDuration/timeDate/timeCycle", 400);
         }
-        if (duration != null && date != null) {
+        if (specifiedCount > 1) {
             throw new AppException("Boundary event " + boundaryEventId
-                    + " timerEventDefinition has both timeDuration and timeDate - only one is supported", 400);
+                    + " timerEventDefinition has more than one of timeDuration/timeDate/timeCycle - only one is supported", 400);
         }
 
         try {
             if (duration != null) {
                 Duration.parse(duration);
-            } else {
+            } else if (date != null) {
                 LocalDateTime.parse(date);
+            } else {
+                TimerCycle.parse(cycle);
             }
+        } catch (AppException e) {
+            throw e;
         } catch (Exception e) {
             throw new AppException("Boundary event " + boundaryEventId + " has an invalid timer value: " + e.getMessage(), 400);
         }
 
-        return new TimerDefinition(duration, date);
+        return new TimerDefinition(duration, date, cycle);
     }
 
     private static BpmnSequenceFlow parseSequenceFlow(Element element) {
