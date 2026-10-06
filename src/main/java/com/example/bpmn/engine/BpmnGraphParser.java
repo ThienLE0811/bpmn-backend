@@ -19,14 +19,15 @@ import java.util.Map;
 
 /**
  * Parses a BPMN 2.0 XML document into an in-memory {@link BpmnProcessDefinition} graph
- * that {@link ProcessEngine} can walk. Understands startEvent, endEvent, userTask,
- * exclusiveGateway, parallelGateway, inclusiveGateway, serviceTask, businessRuleTask,
- * sequenceFlow, and timer boundaryEvents (attachedToRef + timeDuration/timeDate/timeCycle,
- * either interrupting or non-interrupting via cancelActivity) - any other flow-node type
- * (subprocess, script task, message/signal events, standalone timer start/intermediate
- * events, etc.) is silently skipped when building nodes, which means a sequenceFlow
- * referencing one will fail the "unknown node" validation below with a clear error rather
- * than executing incorrectly.
+ * that {@link ProcessEngine} can walk. Understands startEvent (optionally with a timer -
+ * timeDuration/timeDate/timeCycle), endEvent, userTask, exclusiveGateway, parallelGateway,
+ * inclusiveGateway, serviceTask, businessRuleTask, sequenceFlow, timer boundaryEvents
+ * (attachedToRef + timeDuration/timeDate/timeCycle, either interrupting or non-interrupting
+ * via cancelActivity), and standalone timer intermediateCatchEvents (timeDuration/timeDate
+ * only - timeCycle is rejected there, repeating a plain wait point has no coherent semantics)
+ * - any other flow-node type (subprocess, script task, message/signal events, etc.) is
+ * silently skipped when building nodes, which means a sequenceFlow referencing one will fail
+ * the "unknown node" validation below with a clear error rather than executing incorrectly.
  */
 public class BpmnGraphParser {
     private static final String CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn";
@@ -61,7 +62,14 @@ public class BpmnGraphParser {
             switch (localName) {
                 case "startEvent" -> {
                     String id = element.getAttribute("id");
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.START_EVENT, nullIfBlank(element.getAttribute("name")), null));
+                    String name = nullIfBlank(element.getAttribute("name"));
+                    if (hasTimerEventDefinition(element)) {
+                        TimerDefinition timer = parseTimerEventDefinition(element, id);
+                        nodesById.put(id, new BpmnNode(id, BpmnNodeType.START_EVENT, name, null,
+                                null, timer.duration(), timer.date(), timer.cycle(), true));
+                    } else {
+                        nodesById.put(id, new BpmnNode(id, BpmnNodeType.START_EVENT, name, null));
+                    }
                     startNodeId = id;
                     startEventCount++;
                 }
@@ -115,6 +123,21 @@ public class BpmnGraphParser {
                             nullIfBlank(element.getAttribute("name")), null, attachedToRef,
                             timer.duration(), timer.date(), timer.cycle(), interrupting));
                 }
+                case "intermediateCatchEvent" -> {
+                    String id = element.getAttribute("id");
+                    if (hasTimerEventDefinition(element)) {
+                        TimerDefinition timer = parseTimerEventDefinition(element, id);
+                        if (timer.cycle() != null) {
+                            throw new AppException("Intermediate catch event " + id
+                                    + " has timeCycle - repeating intermediate timers are not supported, only timeDuration/timeDate are", 400);
+                        }
+                        nodesById.put(id, new BpmnNode(id, BpmnNodeType.INTERMEDIATE_CATCH_TIMER_EVENT,
+                                nullIfBlank(element.getAttribute("name")), null,
+                                null, timer.duration(), timer.date(), null, true));
+                    }
+                    // Non-timer intermediate catch events (message/signal/etc.) are not supported yet -
+                    // intentionally not added as a node, same as other unsupported element types.
+                }
                 case "sequenceFlow" -> flows.add(parseSequenceFlow(element));
                 default -> {
                     // Unsupported element type for v1 - intentionally not added as a node.
@@ -163,6 +186,23 @@ public class BpmnGraphParser {
     }
 
     private record TimerDefinition(String duration, String date, String cycle) {
+    }
+
+    /** Checks for a {@code <timerEventDefinition>} child without requiring/parsing it - used by event types where a timer is optional (startEvent, intermediateCatchEvent), unlike boundaryEvent where it's mandatory. */
+    private static boolean hasTimerEventDefinition(Element element) {
+        NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            Element childElement = (Element) child;
+            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
+            if ("timerEventDefinition".equals(localName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Reads the {@code <timerEventDefinition>} child of a boundary event and validates its {@code timeDuration}/{@code timeDate}/{@code timeCycle} eagerly. */

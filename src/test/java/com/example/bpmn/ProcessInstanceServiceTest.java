@@ -8,10 +8,14 @@ import com.example.bpmn.dto.ProcessInstanceResponse;
 import com.example.bpmn.dto.StartProcessInstanceRequest;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.BpmnProcess;
+import com.example.bpmn.model.BpmnProcessStartTimer;
 import com.example.bpmn.model.ProcessInstance;
+import com.example.bpmn.model.ProcessInstanceTimer;
 import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessRepository;
+import com.example.bpmn.repository.BpmnProcessStartTimerRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
+import com.example.bpmn.repository.ProcessInstanceTimerRepository;
 import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.ProcessInstanceService;
@@ -20,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -74,16 +79,74 @@ class ProcessInstanceServiceTest {
             </definitions>
             """;
 
+    private static final String INTERMEDIATE_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="intermediate_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="wait1" />
+                <intermediateCatchEvent id="wait1" name="Wait">
+                  <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                </intermediateCatchEvent>
+                <sequenceFlow id="f2" sourceRef="wait1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
+    private static final String TIMER_START_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="timer_start_process" isExecutable="true">
+                <startEvent id="start1" name="Start">
+                  <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                </startEvent>
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
+    private static final String TIMER_START_BOUNDED_CYCLE_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="timer_start_cycle_process" isExecutable="true">
+                <startEvent id="start1" name="Start">
+                  <timerEventDefinition><timeCycle>R2/PT10M</timeCycle></timerEventDefinition>
+                </startEvent>
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
+    private static final String TIMER_START_UNBOUNDED_CYCLE_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="timer_start_unbounded_process" isExecutable="true">
+                <startEvent id="start1" name="Start">
+                  <timerEventDefinition><timeCycle>R/PT10M</timeCycle></timerEventDefinition>
+                </startEvent>
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
     private ProcessInstanceService processInstanceService;
     private final Map<String, BpmnProcess> processes = new ConcurrentHashMap<>();
     private final Map<String, ProcessInstance> instances = new ConcurrentHashMap<>();
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
+    private final Map<String, ProcessInstanceTimer> timerWaits = new ConcurrentHashMap<>();
+    private final Map<String, BpmnProcessStartTimer> startTimers = new ConcurrentHashMap<>();
 
     @BeforeEach
     void setUp() {
         processes.clear();
         instances.clear();
         tasks.clear();
+        timerWaits.clear();
+        startTimers.clear();
 
         BpmnProcessRepository mockProcessRepo = new BpmnProcessRepository() {
             @Override
@@ -247,7 +310,70 @@ class ProcessInstanceServiceTest {
             }
         };
 
-        processInstanceService = new ProcessInstanceServiceImpl(mockProcessRepo, mockInstanceRepo, mockTaskRepo, mockDmnService);
+        ProcessInstanceTimerRepository mockTimerWaitRepo = new ProcessInstanceTimerRepository() {
+            @Override
+            public ProcessInstanceTimer save(ProcessInstanceTimer timer) {
+                timerWaits.put(timer.getId(), timer);
+                return timer;
+            }
+
+            @Override
+            public Optional<ProcessInstanceTimer> findById(String id) {
+                return Optional.ofNullable(timerWaits.get(id));
+            }
+
+            @Override
+            public List<ProcessInstanceTimer> findByProcessInstanceId(String processInstanceId) {
+                return timerWaits.values().stream().filter(t -> processInstanceId.equals(t.getProcessInstanceId())).toList();
+            }
+
+            @Override
+            public List<ProcessInstanceTimer> findDueTimers(LocalDateTime now) {
+                return timerWaits.values().stream().filter(t -> !t.getDueDate().isAfter(now)).toList();
+            }
+
+            @Override
+            public boolean deleteById(String id) {
+                return timerWaits.remove(id) != null;
+            }
+        };
+
+        BpmnProcessStartTimerRepository mockStartTimerRepo = new BpmnProcessStartTimerRepository() {
+            @Override
+            public BpmnProcessStartTimer save(BpmnProcessStartTimer timer) {
+                startTimers.put(timer.getProcessId(), timer);
+                return timer;
+            }
+
+            @Override
+            public Optional<BpmnProcessStartTimer> findByProcessId(String processId) {
+                return Optional.ofNullable(startTimers.get(processId));
+            }
+
+            @Override
+            public List<BpmnProcessStartTimer> findDue(LocalDateTime now) {
+                return startTimers.values().stream().filter(t -> !t.getNextFireAt().isAfter(now)).toList();
+            }
+
+            @Override
+            public void deleteByProcessId(String processId) {
+                startTimers.remove(processId);
+            }
+        };
+
+        processInstanceService = new ProcessInstanceServiceImpl(mockProcessRepo, mockInstanceRepo, mockTaskRepo, mockDmnService,
+                mockTimerWaitRepo, mockStartTimerRepo);
+    }
+
+    private BpmnProcessStartTimer seedStartTimer(String processId, LocalDateTime nextFireAt, Integer repeatsRemaining) {
+        BpmnProcessStartTimer timer = new BpmnProcessStartTimer();
+        timer.setProcessId(processId);
+        timer.setNextFireAt(nextFireAt);
+        timer.setRepeatsRemaining(repeatsRemaining);
+        timer.setCreatedAt(LocalDateTime.now());
+        timer.setUpdatedAt(LocalDateTime.now());
+        startTimers.put(processId, timer);
+        return timer;
     }
 
     private BpmnProcess seedProcess(String id, String bpmnXml) {
@@ -379,5 +505,95 @@ class ProcessInstanceServiceTest {
 
         PageResponse<ProcessInstanceResponse> page2 = processInstanceService.listInstances(2, 2);
         assertEquals(1, page2.getContent().size());
+    }
+
+    @Test
+    @DisplayName("Should create a timer wait (not a task) when starting lands on an intermediate catch timer event")
+    void testStartInstanceCreatesTimerWaitForIntermediateCatchEvent() {
+        seedProcess("proc-1", INTERMEDIATE_TIMER_PROCESS_XML);
+
+        ProcessInstanceResponse response = processInstanceService.startInstance(startRequest("proc-1", null), "alice");
+
+        assertEquals("RUNNING", response.getStatus());
+        assertEquals("wait1", response.getCurrentNodeId());
+        assertTrue(tasks.isEmpty());
+        assertEquals(1, timerWaits.size());
+        ProcessInstanceTimer wait = timerWaits.values().iterator().next();
+        assertEquals("wait1", wait.getNodeId());
+        assertEquals(response.getId(), wait.getProcessInstanceId());
+    }
+
+    @Test
+    @DisplayName("Should auto-start one instance for a one-shot start timer then remove its schedule")
+    void testProcessDueStartTimersFiresOneShotThenRemovesSchedule() {
+        seedProcess("proc-timer", TIMER_START_PROCESS_XML);
+        seedStartTimer("proc-timer", LocalDateTime.now().minusMinutes(1), null);
+
+        processInstanceService.processDueStartTimers();
+
+        List<ProcessInstance> created = instances.values().stream()
+                .filter(i -> "proc-timer".equals(i.getProcessId())).toList();
+        assertEquals(1, created.size());
+        assertEquals("SYSTEM_TIMER", created.get(0).getStartedBy());
+        assertNull(startTimers.get("proc-timer"));
+    }
+
+    @Test
+    @DisplayName("Should fire a bounded start-timer cycle exactly N times then remove its schedule")
+    void testProcessDueStartTimersBoundedCycleFiresExactlyNTimesThenStops() {
+        seedProcess("proc-cycle", TIMER_START_BOUNDED_CYCLE_PROCESS_XML);
+        seedStartTimer("proc-cycle", LocalDateTime.now().minusMinutes(1), 2);
+
+        processInstanceService.processDueStartTimers();
+        assertEquals(1, instances.values().stream().filter(i -> "proc-cycle".equals(i.getProcessId())).count());
+        BpmnProcessStartTimer afterFirst = startTimers.get("proc-cycle");
+        assertNotNull(afterFirst);
+        assertEquals(1, afterFirst.getRepeatsRemaining());
+        assertTrue(afterFirst.getNextFireAt().isAfter(LocalDateTime.now()));
+
+        afterFirst.setNextFireAt(LocalDateTime.now().minusMinutes(1));
+        processInstanceService.processDueStartTimers();
+        assertEquals(2, instances.values().stream().filter(i -> "proc-cycle".equals(i.getProcessId())).count());
+        assertNull(startTimers.get("proc-cycle"));
+    }
+
+    @Test
+    @DisplayName("Should keep rescheduling an unbounded start-timer cycle indefinitely")
+    void testProcessDueStartTimersUnboundedCycleKeepsRescheduling() {
+        seedProcess("proc-unbounded", TIMER_START_UNBOUNDED_CYCLE_PROCESS_XML);
+        seedStartTimer("proc-unbounded", LocalDateTime.now().minusMinutes(1), -1);
+
+        for (int i = 1; i <= 3; i++) {
+            processInstanceService.processDueStartTimers();
+            assertEquals(i, instances.values().stream().filter(p -> "proc-unbounded".equals(p.getProcessId())).count());
+            BpmnProcessStartTimer schedule = startTimers.get("proc-unbounded");
+            assertNotNull(schedule);
+            assertEquals(-1, schedule.getRepeatsRemaining());
+            assertTrue(schedule.getNextFireAt().isAfter(LocalDateTime.now()));
+            schedule.setNextFireAt(LocalDateTime.now().minusMinutes(1));
+        }
+    }
+
+    @Test
+    @DisplayName("Should remove a start-timer schedule and start nothing when its process was deleted")
+    void testProcessDueStartTimersSkipsWhenProcessDeleted() {
+        seedStartTimer("deleted-proc", LocalDateTime.now().minusMinutes(1), null);
+
+        processInstanceService.processDueStartTimers();
+
+        assertTrue(instances.isEmpty());
+        assertNull(startTimers.get("deleted-proc"));
+    }
+
+    @Test
+    @DisplayName("Should remove a stale start-timer schedule and start nothing when the live XML no longer has a timer")
+    void testProcessDueStartTimersSkipsWhenXmlNoLongerHasTimer() {
+        seedProcess("proc-1", SIMPLE_PROCESS_XML);
+        seedStartTimer("proc-1", LocalDateTime.now().minusMinutes(1), null);
+
+        processInstanceService.processDueStartTimers();
+
+        assertTrue(instances.isEmpty());
+        assertNull(startTimers.get("proc-1"));
     }
 }

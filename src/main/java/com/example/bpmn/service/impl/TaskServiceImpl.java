@@ -9,26 +9,30 @@ import com.example.bpmn.engine.BpmnNode;
 import com.example.bpmn.engine.BpmnProcessDefinition;
 import com.example.bpmn.engine.ProcessEngine;
 import com.example.bpmn.engine.TimerCycle;
+import com.example.bpmn.engine.TimerSchedule;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.TaskMapper;
 import com.example.bpmn.model.ProcessInstance;
+import com.example.bpmn.model.ProcessInstanceTimer;
 import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
+import com.example.bpmn.repository.ProcessInstanceTimerRepository;
 import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.TaskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class TaskServiceImpl implements TaskService {
     private static final Logger logger = LoggerFactory.getLogger(TaskServiceImpl.class);
@@ -36,15 +40,18 @@ public class TaskServiceImpl implements TaskService {
     private final ProcessInstanceRepository processInstanceRepository;
     private final BpmnProcessVersionRepository bpmnProcessVersionRepository;
     private final DmnDecisionService dmnDecisionService;
+    private final ProcessInstanceTimerRepository processInstanceTimerRepository;
 
     public TaskServiceImpl(TaskRepository taskRepository,
                             ProcessInstanceRepository processInstanceRepository,
                             BpmnProcessVersionRepository bpmnProcessVersionRepository,
-                            DmnDecisionService dmnDecisionService) {
+                            DmnDecisionService dmnDecisionService,
+                            ProcessInstanceTimerRepository processInstanceTimerRepository) {
         this.taskRepository = taskRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.bpmnProcessVersionRepository = bpmnProcessVersionRepository;
         this.dmnDecisionService = dmnDecisionService;
+        this.processInstanceTimerRepository = processInstanceTimerRepository;
     }
 
     @Override
@@ -130,14 +137,39 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public void processDueTimers() {
         LocalDateTime now = LocalDateTime.now();
-        List<Task> dueTasks = taskRepository.findDueTimers(now);
-        for (Task task : dueTasks) {
+        for (Task task : taskRepository.findDueTimers(now)) {
             try {
                 fireBoundaryTimer(task, now);
             } catch (Exception e) {
                 logger.error("Failed to fire boundary timer for task {}: {}", task.getId(), e.getMessage(), e);
             }
         }
+        for (ProcessInstanceTimer timer : processInstanceTimerRepository.findDueTimers(now)) {
+            try {
+                fireIntermediateTimer(timer, now);
+            } catch (Exception e) {
+                logger.error("Failed to fire intermediate timer {}: {}", timer.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private void fireIntermediateTimer(ProcessInstanceTimer timer, LocalDateTime now) {
+        // Re-fetch: defensive against the row having been consumed already (single-threaded
+        // poller today, but keeps this safe if that ever changes).
+        if (processInstanceTimerRepository.findById(timer.getId()).isEmpty()) {
+            return;
+        }
+
+        ProcessInstance instance = processInstanceRepository.findById(timer.getProcessInstanceId())
+                .orElseThrow(() -> new AppException("Process instance not found with id: " + timer.getProcessInstanceId(), 404));
+        BpmnProcessDefinition definition = loadDefinition(instance);
+        Map<String, Object> variables = new HashMap<>(instance.getVariables() != null ? instance.getVariables() : Map.of());
+
+        processInstanceTimerRepository.deleteById(timer.getId());
+        advanceAndPersist(instance, definition, timer.getNodeId(), variables, now);
+
+        logger.info("Intermediate timer fired for node {}, process instance {} now {}",
+                timer.getNodeId(), instance.getId(), instance.getStatus());
     }
 
     private void fireBoundaryTimer(Task task, LocalDateTime now) {
@@ -214,19 +246,22 @@ public class TaskServiceImpl implements TaskService {
         return BpmnGraphParser.parse(bpmnXml);
     }
 
-    /** Walks the engine forward from {@code fromNodeId}, persists any newly created tasks, and updates the instance's status/currentNodeId/variables. Shared by task completion and boundary-timer firing. */
+    /** Walks the engine forward from {@code fromNodeId}, persists any newly created tasks/timer waits, and updates the instance's status/currentNodeId/variables. Shared by task completion, boundary-timer firing, and intermediate-timer firing. */
     private void advanceAndPersist(ProcessInstance instance, BpmnProcessDefinition definition, String fromNodeId,
                                     Map<String, Object> variables, LocalDateTime now) {
         Set<String> pendingJoinArrivals = instance.getPendingJoinArrivals() != null
                 ? instance.getPendingJoinArrivals() : Set.of();
         // Other branches still open elsewhere in this instance - an inclusive join needs these
         // to tell which of its incoming flows are still expected to arrive. The task/branch this
-        // call originates from has already been saved as COMPLETED/CANCELLED by the caller, so
-        // it's naturally excluded by the PENDING/CLAIMED status filter.
-        Set<String> otherActiveNodeIds = taskRepository.findByProcessInstanceId(instance.getId()).stream()
+        // call originates from has already been saved/removed as COMPLETED/CANCELLED/consumed by
+        // the caller, so it's naturally excluded here.
+        Set<String> otherActiveNodeIds = new HashSet<>(taskRepository.findByProcessInstanceId(instance.getId()).stream()
                 .filter(t -> "PENDING".equals(t.getStatus()) || "CLAIMED".equals(t.getStatus()))
                 .map(Task::getNodeId)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toSet()));
+        otherActiveNodeIds.addAll(processInstanceTimerRepository.findByProcessInstanceId(instance.getId()).stream()
+                .map(ProcessInstanceTimer::getNodeId)
+                .collect(Collectors.toSet()));
         AdvanceResult result = ProcessEngine.advance(definition, fromNodeId, variables, pendingJoinArrivals,
                 otherActiveNodeIds, dmnDecisionService::evaluate);
         instance.setVariables(result.getUpdatedVariables());
@@ -234,22 +269,29 @@ public class TaskServiceImpl implements TaskService {
         for (String nodeId : result.getNewUserTaskNodeIds()) {
             createTaskForNode(instance, definition, nodeId);
         }
+        for (String nodeId : result.getNewTimerWaitNodeIds()) {
+            createTimerWaitForNode(instance, definition, nodeId);
+        }
         instance.setPendingJoinArrivals(result.getPendingJoinArrivals());
 
-        // A parallel fork can leave other sibling tasks (created in this same instance by an
-        // earlier or later branch) still open, so instance completion depends on all of them,
+        // A parallel fork can leave other sibling tasks/timer waits (created in this same instance
+        // by an earlier or later branch) still open, so instance completion depends on all of them,
         // not just the branch this call just walked.
         List<Task> openTasks = taskRepository.findByProcessInstanceId(instance.getId()).stream()
                 .filter(t -> "PENDING".equals(t.getStatus()) || "CLAIMED".equals(t.getStatus()))
                 .collect(Collectors.toList());
+        List<ProcessInstanceTimer> openTimerWaits = processInstanceTimerRepository.findByProcessInstanceId(instance.getId());
 
-        if (openTasks.isEmpty() && result.getPendingJoinArrivals().isEmpty()) {
+        if (openTasks.isEmpty() && openTimerWaits.isEmpty() && result.getPendingJoinArrivals().isEmpty()) {
             instance.setStatus("COMPLETED");
             instance.setCurrentNodeId(null);
             instance.setCompletedAt(now);
         } else {
             instance.setStatus("RUNNING");
-            instance.setCurrentNodeId(openTasks.stream().map(Task::getNodeId).collect(Collectors.joining(",")));
+            instance.setCurrentNodeId(Stream.concat(
+                            openTasks.stream().map(Task::getNodeId),
+                            openTimerWaits.stream().map(ProcessInstanceTimer::getNodeId))
+                    .collect(Collectors.joining(",")));
         }
         instance.setUpdatedAt(now);
         processInstanceRepository.save(instance);
@@ -272,28 +314,28 @@ public class TaskServiceImpl implements TaskService {
         taskRepository.save(next);
     }
 
+    private void createTimerWaitForNode(ProcessInstance instance, BpmnProcessDefinition definition, String nodeId) {
+        BpmnNode node = definition.getNode(nodeId);
+        LocalDateTime now = LocalDateTime.now();
+
+        ProcessInstanceTimer timer = new ProcessInstanceTimer();
+        timer.setId(UUID.randomUUID().toString());
+        timer.setProcessInstanceId(instance.getId());
+        timer.setNodeId(nodeId);
+        timer.setDueDate(TimerSchedule.computeNextFireAt(node, now));
+        timer.setCreatedAt(now);
+        processInstanceTimerRepository.save(timer);
+    }
+
     /** Computes when this task's attached boundary timer should first fire, or null if it has none. */
     static LocalDateTime computeBoundaryTimerDueDate(BpmnProcessDefinition definition, String nodeId, LocalDateTime now) {
         BpmnNode boundaryEvent = definition.getBoundaryTimerFor(nodeId);
-        if (boundaryEvent == null) {
-            return null;
-        }
-        if (boundaryEvent.getTimerDate() != null) {
-            return LocalDateTime.parse(boundaryEvent.getTimerDate());
-        }
-        if (boundaryEvent.getTimerDuration() != null) {
-            return now.plus(Duration.parse(boundaryEvent.getTimerDuration()));
-        }
-        return now.plus(TimerCycle.parse(boundaryEvent.getTimerCycle()).interval());
+        return boundaryEvent == null ? null : TimerSchedule.computeNextFireAt(boundaryEvent, now);
     }
 
     /** {@code null} if this task has no boundary timer or it isn't a timeCycle; {@code -1} if the cycle is unbounded; else the bounded repeat count. */
     static Integer computeInitialTimerRepeats(BpmnProcessDefinition definition, String nodeId) {
         BpmnNode boundaryEvent = definition.getBoundaryTimerFor(nodeId);
-        if (boundaryEvent == null || boundaryEvent.getTimerCycle() == null) {
-            return null;
-        }
-        Integer repeatCount = TimerCycle.parse(boundaryEvent.getTimerCycle()).repeatCount();
-        return repeatCount != null ? repeatCount : -1;
+        return boundaryEvent == null ? null : TimerSchedule.computeInitialRepeats(boundaryEvent);
     }
 }

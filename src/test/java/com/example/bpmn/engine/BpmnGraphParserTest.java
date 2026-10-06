@@ -306,6 +306,103 @@ class BpmnGraphParserTest {
     }
 
     @Test
+    @DisplayName("Should parse a timer start event's timeDate/timeDuration/timeCycle")
+    void parsesTimerStartEvent() {
+        String dateXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1">
+                      <timerEventDefinition><timeDate>2030-01-01T00:00:00</timeDate></timerEventDefinition>
+                    </startEvent>
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="end1" />
+                    <endEvent id="end1" />
+                  </process>
+                </definitions>
+                """;
+        BpmnNode startNode = BpmnGraphParser.parse(dateXml).getNode("start1");
+        assertEquals("2030-01-01T00:00:00", startNode.getTimerDate());
+
+        String cycleXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1">
+                      <timerEventDefinition><timeCycle>R3/PT10M</timeCycle></timerEventDefinition>
+                    </startEvent>
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="end1" />
+                    <endEvent id="end1" />
+                  </process>
+                </definitions>
+                """;
+        assertEquals("R3/PT10M", BpmnGraphParser.parse(cycleXml).getNode("start1").getTimerCycle());
+    }
+
+    @Test
+    @DisplayName("Should still parse a plain start event with no timer")
+    void parsesPlainStartEventWithoutTimer() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.APPROVAL_PROCESS_XML);
+        BpmnNode startNode = def.getNode("start1");
+        assertNull(startNode.getTimerDate());
+        assertNull(startNode.getTimerDuration());
+        assertNull(startNode.getTimerCycle());
+    }
+
+    @Test
+    @DisplayName("Should parse a standalone intermediate catch timer event's timeDuration/timeDate")
+    void parsesIntermediateCatchTimerEvent() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.INTERMEDIATE_TIMER_PROCESS_XML);
+
+        BpmnNode wait = def.getNode("wait1");
+        assertEquals(BpmnNodeType.INTERMEDIATE_CATCH_TIMER_EVENT, wait.getType());
+        assertEquals("PT1H", wait.getTimerDuration());
+        assertEquals(1, def.getOutgoingFlows("wait1").size());
+        assertEquals("end1", def.getOutgoingFlows("wait1").get(0).getTargetRef());
+    }
+
+    @Test
+    @DisplayName("Should reject timeCycle on an intermediate catch timer event")
+    void rejectsIntermediateCatchTimerEventWithTimeCycle() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="wait1" />
+                    <intermediateCatchEvent id="wait1">
+                      <timerEventDefinition><timeCycle>R3/PT10M</timeCycle></timerEventDefinition>
+                    </intermediateCatchEvent>
+                    <sequenceFlow id="f2" sourceRef="wait1" targetRef="end1" />
+                    <endEvent id="end1" />
+                  </process>
+                </definitions>
+                """;
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should not add a node for a non-timer intermediate catch event (unsupported)")
+    void skipsNonTimerIntermediateCatchEvent() {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+                  <process id="p1">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="wait1" />
+                    <intermediateCatchEvent id="wait1" />
+                    <sequenceFlow id="f2" sourceRef="wait1" targetRef="end1" />
+                    <endEvent id="end1" />
+                  </process>
+                </definitions>
+                """;
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+    }
+
+    @Test
     @DisplayName("Should reject XML without exactly one start event")
     void rejectsXmlWithoutExactlyOneStartEvent() {
         String xmlNoStart = """

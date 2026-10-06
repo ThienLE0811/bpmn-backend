@@ -37,8 +37,8 @@ public class Main {
         // 2. Initialize Dependency Container (DI)
         AppContainer container = new AppContainer();
 
-        // 3. Start background timer scheduler (fires boundary timer events)
-        TimerScheduler timerScheduler = TimerScheduler.start(container.getTaskService());
+        // 3. Start background timer scheduler (fires boundary/intermediate timer events and timer start events)
+        TimerScheduler timerScheduler = TimerScheduler.start(container.getTaskService(), container.getProcessInstanceService());
 
         // 4. Register Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

@@ -79,6 +79,7 @@ public class ProcessEngine {
         Set<String> arrivals = new HashSet<>(pendingJoinArrivals != null ? pendingJoinArrivals : Set.of());
         Set<String> otherActive = otherActiveNodeIds != null ? otherActiveNodeIds : Set.of();
         List<String> waitingUserTasks = new ArrayList<>();
+        List<String> waitingTimerNodes = new ArrayList<>();
 
         Deque<Token> workList = new ArrayDeque<>();
         workList.push(new Token(fromNodeId, null));
@@ -101,6 +102,11 @@ public class ProcessEngine {
             }
             if (node.getType() == BpmnNodeType.END_EVENT) {
                 // This branch has finished; nothing more to push for it.
+                continue;
+            }
+            if (node.getType() == BpmnNodeType.INTERMEDIATE_CATCH_TIMER_EVENT && !token.nodeId().equals(fromNodeId)) {
+                // Newly reached (not the timer that just fired) - stop and wait here.
+                waitingTimerNodes.add(token.nodeId());
                 continue;
             }
             if (node.getType() == BpmnNodeType.PARALLEL_GATEWAY || node.getType() == BpmnNodeType.INCLUSIVE_GATEWAY) {
@@ -147,7 +153,7 @@ public class ProcessEngine {
             workList.push(new Token(nextNodeId, nextFlowId));
         }
 
-        return new AdvanceResult(waitingUserTasks, arrivals, vars);
+        return new AdvanceResult(waitingUserTasks, waitingTimerNodes, arrivals, vars);
     }
 
     /** Evaluates the business rule task's DMN decision and merges the result into {@code vars} (in place) so a gateway reached later in the same walk can branch on it. */

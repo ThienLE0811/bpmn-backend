@@ -7,18 +7,22 @@ import com.example.bpmn.controller.ProcessInstanceController;
 import com.example.bpmn.controller.TaskController;
 import com.example.bpmn.controller.UserController;
 import com.example.bpmn.repository.BpmnProcessRepository;
+import com.example.bpmn.repository.BpmnProcessStartTimerRepository;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.DmnDecisionRepository;
 import com.example.bpmn.repository.DmnDecisionVersionRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
+import com.example.bpmn.repository.ProcessInstanceTimerRepository;
 import com.example.bpmn.repository.RefreshTokenRepository;
 import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.repository.UserRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessRepository;
+import com.example.bpmn.repository.impl.PostgresBpmnProcessStartTimerRepository;
 import com.example.bpmn.repository.impl.PostgresBpmnProcessVersionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionRepository;
 import com.example.bpmn.repository.impl.PostgresDmnDecisionVersionRepository;
 import com.example.bpmn.repository.impl.PostgresProcessInstanceRepository;
+import com.example.bpmn.repository.impl.PostgresProcessInstanceTimerRepository;
 import com.example.bpmn.repository.impl.PostgresRefreshTokenRepository;
 import com.example.bpmn.repository.impl.PostgresTaskRepository;
 import com.example.bpmn.repository.impl.PostgresUserRepository;
@@ -49,6 +53,8 @@ public class AppContainer {
     private final RefreshTokenRepository refreshTokenRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final TaskRepository taskRepository;
+    private final ProcessInstanceTimerRepository processInstanceTimerRepository;
+    private final BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository;
 
     // Services
     private final BpmnProcessService bpmnProcessService;
@@ -76,14 +82,16 @@ public class AppContainer {
         this.refreshTokenRepository = new PostgresRefreshTokenRepository();
         this.processInstanceRepository = new PostgresProcessInstanceRepository();
         this.taskRepository = new PostgresTaskRepository();
+        this.processInstanceTimerRepository = new PostgresProcessInstanceTimerRepository();
+        this.bpmnProcessStartTimerRepository = new PostgresBpmnProcessStartTimerRepository();
 
         // 2. Services initialization
-        this.bpmnProcessService = new BpmnProcessServiceImpl(this.bpmnProcessRepository, this.bpmnProcessVersionRepository);
+        this.bpmnProcessService = new BpmnProcessServiceImpl(this.bpmnProcessRepository, this.bpmnProcessVersionRepository, this.bpmnProcessStartTimerRepository);
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
         this.authService = new AuthServiceImpl(this.userRepository, this.refreshTokenRepository);
-        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService);
-        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService);
+        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.bpmnProcessStartTimerRepository);
+        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService, this.processInstanceTimerRepository);
 
         // 3. Controllers initialization
         this.bpmnProcessController = new BpmnProcessController(this.bpmnProcessService);
@@ -172,5 +180,13 @@ public class AppContainer {
 
     public TaskRepository getTaskRepository() {
         return taskRepository;
+    }
+
+    public ProcessInstanceTimerRepository getProcessInstanceTimerRepository() {
+        return processInstanceTimerRepository;
+    }
+
+    public BpmnProcessStartTimerRepository getBpmnProcessStartTimerRepository() {
+        return bpmnProcessStartTimerRepository;
     }
 }

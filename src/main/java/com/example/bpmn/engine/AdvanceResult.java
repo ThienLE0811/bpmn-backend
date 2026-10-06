@@ -20,11 +20,14 @@ import java.util.Set;
  */
 public class AdvanceResult {
     private final List<String> newUserTaskNodeIds;
+    private final List<String> newTimerWaitNodeIds;
     private final Set<String> pendingJoinArrivals;
     private final Map<String, Object> updatedVariables;
 
-    AdvanceResult(List<String> newUserTaskNodeIds, Set<String> pendingJoinArrivals, Map<String, Object> updatedVariables) {
+    AdvanceResult(List<String> newUserTaskNodeIds, List<String> newTimerWaitNodeIds,
+                  Set<String> pendingJoinArrivals, Map<String, Object> updatedVariables) {
         this.newUserTaskNodeIds = List.copyOf(newUserTaskNodeIds);
+        this.newTimerWaitNodeIds = List.copyOf(newTimerWaitNodeIds);
         this.pendingJoinArrivals = Set.copyOf(pendingJoinArrivals);
         // Not Map.copyOf: process variables may legitimately contain null values, which it rejects.
         this.updatedVariables = Collections.unmodifiableMap(new HashMap<>(updatedVariables));
@@ -35,14 +38,19 @@ public class AdvanceResult {
         return newUserTaskNodeIds;
     }
 
+    /** Node ids of the standalone intermediate catch timer events this call reached and is now waiting at - same fork semantics as user tasks. */
+    public List<String> getNewTimerWaitNodeIds() {
+        return newTimerWaitNodeIds;
+    }
+
     /** Updated set of sequence-flow ids that have arrived at a not-yet-satisfied parallel join, to persist on the process instance. */
     public Set<String> getPendingJoinArrivals() {
         return pendingJoinArrivals;
     }
 
-    /** True when this call produced no new waiting tasks and left no join pending - the branches it walked all reached an end event. */
+    /** True when this call produced no new waiting tasks/timers and left no join pending - the branches it walked all reached an end event. */
     public boolean isFullyResolved() {
-        return newUserTaskNodeIds.isEmpty() && pendingJoinArrivals.isEmpty();
+        return newUserTaskNodeIds.isEmpty() && newTimerWaitNodeIds.isEmpty() && pendingJoinArrivals.isEmpty();
     }
 
     /** Process variables after this call, including anything a business rule task set from its DMN decision result - persist this, not the map passed in. */

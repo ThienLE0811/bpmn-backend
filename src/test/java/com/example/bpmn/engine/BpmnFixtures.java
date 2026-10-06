@@ -189,4 +189,22 @@ final class BpmnFixtures {
               </process>
             </definitions>
             """;
+
+    /** start -> task1 -> wait1 (intermediate catch timer, 1h) -> end1 */
+    static final String INTERMEDIATE_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="intermediate_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="wait1" />
+                <intermediateCatchEvent id="wait1" name="Wait">
+                  <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                </intermediateCatchEvent>
+                <sequenceFlow id="f3" sourceRef="wait1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
 }

@@ -5,12 +5,18 @@ import com.example.bpmn.dto.BpmnProcessResponse;
 import com.example.bpmn.dto.BpmnProcessUpdateRequest;
 import com.example.bpmn.dto.BpmnProcessVersionResponse;
 import com.example.bpmn.dto.PageResponse;
+import com.example.bpmn.engine.BpmnGraphParser;
+import com.example.bpmn.engine.BpmnNode;
+import com.example.bpmn.engine.BpmnProcessDefinition;
+import com.example.bpmn.engine.TimerSchedule;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.BpmnProcessMapper;
 import com.example.bpmn.mapper.BpmnProcessVersionMapper;
 import com.example.bpmn.model.BpmnProcess;
+import com.example.bpmn.model.BpmnProcessStartTimer;
 import com.example.bpmn.model.BpmnProcessVersion;
 import com.example.bpmn.repository.BpmnProcessRepository;
+import com.example.bpmn.repository.BpmnProcessStartTimerRepository;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.service.BpmnProcessService;
 import com.example.bpmn.util.XmlUtil;
@@ -26,11 +32,14 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
     private static final Logger logger = LoggerFactory.getLogger(BpmnProcessServiceImpl.class);
     private final BpmnProcessRepository bpmnProcessRepository;
     private final BpmnProcessVersionRepository bpmnProcessVersionRepository;
+    private final BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository;
 
     public BpmnProcessServiceImpl(BpmnProcessRepository bpmnProcessRepository,
-                                   BpmnProcessVersionRepository bpmnProcessVersionRepository) {
+                                   BpmnProcessVersionRepository bpmnProcessVersionRepository,
+                                   BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository) {
         this.bpmnProcessRepository = bpmnProcessRepository;
         this.bpmnProcessVersionRepository = bpmnProcessVersionRepository;
+        this.bpmnProcessStartTimerRepository = bpmnProcessStartTimerRepository;
     }
 
     @Override
@@ -81,6 +90,7 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
 
         BpmnProcess saved = bpmnProcessRepository.save(process);
         saveVersionSnapshot(saved, saved.getCreatedBy());
+        syncStartTimerSchedule(saved);
         logger.info("Saved new BPMN process with ID: {}", saved.getId());
         return BpmnProcessMapper.toResponse(saved);
     }
@@ -122,9 +132,40 @@ public class BpmnProcessServiceImpl implements BpmnProcessService {
         BpmnProcess saved = bpmnProcessRepository.save(existing);
         if (versionBumped) {
             saveVersionSnapshot(saved, saved.getUpdatedBy());
+            syncStartTimerSchedule(saved);
         }
         logger.info("Updated BPMN process with ID: {}", saved.getId());
         return BpmnProcessMapper.toResponse(saved);
+    }
+
+    /** Keeps the {@code bpmn_process_start_timers} schedule row in sync with whatever the start event's timer currently says - deletes it if the XML has no timer (or doesn't parse; XML is never validated at save time). */
+    private void syncStartTimerSchedule(BpmnProcess process) {
+        BpmnNode startNode;
+        try {
+            BpmnProcessDefinition definition = BpmnGraphParser.parse(process.getBpmnXml());
+            startNode = definition.getNode(definition.getStartNodeId());
+        } catch (Exception e) {
+            logger.warn("Could not parse BPMN XML for process {} while syncing its start-timer schedule - removing any existing schedule: {}",
+                    process.getId(), e.getMessage());
+            bpmnProcessStartTimerRepository.deleteByProcessId(process.getId());
+            return;
+        }
+
+        boolean hasTimer = startNode.getTimerDate() != null || startNode.getTimerDuration() != null
+                || startNode.getTimerCycle() != null;
+        if (!hasTimer) {
+            bpmnProcessStartTimerRepository.deleteByProcessId(process.getId());
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        BpmnProcessStartTimer schedule = new BpmnProcessStartTimer();
+        schedule.setProcessId(process.getId());
+        schedule.setNextFireAt(TimerSchedule.computeNextFireAt(startNode, now));
+        schedule.setRepeatsRemaining(TimerSchedule.computeInitialRepeats(startNode));
+        schedule.setCreatedAt(now);
+        schedule.setUpdatedAt(now);
+        bpmnProcessStartTimerRepository.save(schedule);
     }
 
     private void saveVersionSnapshot(BpmnProcess process, String createdBy) {

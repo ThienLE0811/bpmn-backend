@@ -9,9 +9,11 @@ import com.example.bpmn.dto.TaskResponse;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.BpmnProcessVersion;
 import com.example.bpmn.model.ProcessInstance;
+import com.example.bpmn.model.ProcessInstanceTimer;
 import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
+import com.example.bpmn.repository.ProcessInstanceTimerRepository;
 import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.TaskService;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -169,16 +172,35 @@ class TaskServiceTest {
             </definitions>
             """;
 
+    private static final String INTERMEDIATE_TIMER_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://example.com">
+              <process id="intermediate_timer_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="wait1" />
+                <intermediateCatchEvent id="wait1" name="Wait">
+                  <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+                </intermediateCatchEvent>
+                <sequenceFlow id="f3" sourceRef="wait1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
     private TaskService taskService;
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final Map<String, ProcessInstance> instances = new ConcurrentHashMap<>();
     private final List<BpmnProcessVersion> bpmnVersions = new ArrayList<>();
+    private final Map<String, ProcessInstanceTimer> timerWaits = new ConcurrentHashMap<>();
 
     @BeforeEach
     void setUp() {
         tasks.clear();
         instances.clear();
         bpmnVersions.clear();
+        timerWaits.clear();
 
         TaskRepository mockTaskRepo = new TaskRepository() {
             @Override
@@ -327,7 +349,50 @@ class TaskServiceTest {
             }
         };
 
-        taskService = new TaskServiceImpl(mockTaskRepo, mockInstanceRepo, mockVersionRepo, mockDmnService);
+        ProcessInstanceTimerRepository mockTimerWaitRepo = new ProcessInstanceTimerRepository() {
+            @Override
+            public ProcessInstanceTimer save(ProcessInstanceTimer timer) {
+                timerWaits.put(timer.getId(), timer);
+                return timer;
+            }
+
+            @Override
+            public Optional<ProcessInstanceTimer> findById(String id) {
+                return Optional.ofNullable(timerWaits.get(id));
+            }
+
+            @Override
+            public List<ProcessInstanceTimer> findByProcessInstanceId(String processInstanceId) {
+                return timerWaits.values().stream()
+                        .filter(t -> processInstanceId.equals(t.getProcessInstanceId()))
+                        .collect(Collectors.toList());
+            }
+
+            @Override
+            public List<ProcessInstanceTimer> findDueTimers(LocalDateTime now) {
+                return timerWaits.values().stream()
+                        .filter(t -> !t.getDueDate().isAfter(now))
+                        .collect(Collectors.toList());
+            }
+
+            @Override
+            public boolean deleteById(String id) {
+                return timerWaits.remove(id) != null;
+            }
+        };
+
+        taskService = new TaskServiceImpl(mockTaskRepo, mockInstanceRepo, mockVersionRepo, mockDmnService, mockTimerWaitRepo);
+    }
+
+    private ProcessInstanceTimer seedTimerWait(ProcessInstance instance, String nodeId, LocalDateTime dueDate) {
+        ProcessInstanceTimer timer = new ProcessInstanceTimer();
+        timer.setId(UUID.randomUUID().toString());
+        timer.setProcessInstanceId(instance.getId());
+        timer.setNodeId(nodeId);
+        timer.setDueDate(dueDate);
+        timer.setCreatedAt(LocalDateTime.now());
+        timerWaits.put(timer.getId(), timer);
+        return timer;
     }
 
     private ProcessInstance seedInstance(String processId, int version, String bpmnXml, String currentNodeId) {
@@ -732,5 +797,31 @@ class TaskServiceTest {
 
         PageResponse<TaskResponse> page2 = taskService.listTasks(null, false, "alice", 2, 2);
         assertEquals(1, page2.getContent().size());
+    }
+
+    @Test
+    @DisplayName("Should fire a due intermediate timer, remove the wait row, and resume the walk to completion")
+    void testProcessDueTimersFiresIntermediateTimerAndCompletesInstance() {
+        ProcessInstance instance = seedInstance("intermediate_timer_process", 1, INTERMEDIATE_TIMER_PROCESS_XML, "wait1");
+        seedTimerWait(instance, "wait1", LocalDateTime.now().minusMinutes(5));
+
+        taskService.processDueTimers();
+
+        assertTrue(timerWaits.isEmpty());
+        ProcessInstance updated = instances.get(instance.getId());
+        assertEquals("COMPLETED", updated.getStatus());
+        assertNull(updated.getCurrentNodeId());
+    }
+
+    @Test
+    @DisplayName("Should leave a future-due intermediate timer untouched")
+    void testProcessDueTimersIgnoresFutureIntermediateTimer() {
+        ProcessInstance instance = seedInstance("intermediate_timer_process", 1, INTERMEDIATE_TIMER_PROCESS_XML, "wait1");
+        seedTimerWait(instance, "wait1", LocalDateTime.now().plusHours(1));
+
+        taskService.processDueTimers();
+
+        assertEquals(1, timerWaits.size());
+        assertEquals("RUNNING", instances.get(instance.getId()).getStatus());
     }
 }

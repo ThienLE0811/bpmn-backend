@@ -199,4 +199,26 @@ class ProcessEngineTest {
                 () -> ProcessEngine.advance(dmnDef, dmnDef.getStartNodeId(), Map.of()));
         assertEquals(500, ex.getStatusCode());
     }
+
+    @Test
+    @DisplayName("Should park at a newly-reached intermediate catch timer event, not treat it as a user task")
+    void advanceParksAtIntermediateTimerEvent() {
+        BpmnProcessDefinition timerDef = BpmnGraphParser.parse(BpmnFixtures.INTERMEDIATE_TIMER_PROCESS_XML);
+
+        AdvanceResult result = ProcessEngine.advance(timerDef, "task1", Map.of());
+
+        assertFalse(result.isFullyResolved());
+        assertEquals(List.of("wait1"), result.getNewTimerWaitNodeIds());
+        assertTrue(result.getNewUserTaskNodeIds().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should walk through the intermediate timer event to the end when it fires")
+    void advanceFromIntermediateTimerEventReachesEnd() {
+        BpmnProcessDefinition timerDef = BpmnGraphParser.parse(BpmnFixtures.INTERMEDIATE_TIMER_PROCESS_XML);
+
+        AdvanceResult result = ProcessEngine.advance(timerDef, "wait1", Map.of());
+
+        assertTrue(result.isFullyResolved());
+    }
 }

@@ -8,13 +8,19 @@ import com.example.bpmn.engine.BpmnGraphParser;
 import com.example.bpmn.engine.BpmnNode;
 import com.example.bpmn.engine.BpmnProcessDefinition;
 import com.example.bpmn.engine.ProcessEngine;
+import com.example.bpmn.engine.TimerCycle;
+import com.example.bpmn.engine.TimerSchedule;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.mapper.ProcessInstanceMapper;
 import com.example.bpmn.model.BpmnProcess;
+import com.example.bpmn.model.BpmnProcessStartTimer;
 import com.example.bpmn.model.ProcessInstance;
+import com.example.bpmn.model.ProcessInstanceTimer;
 import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessRepository;
+import com.example.bpmn.repository.BpmnProcessStartTimerRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
+import com.example.bpmn.repository.ProcessInstanceTimerRepository;
 import com.example.bpmn.repository.TaskRepository;
 import com.example.bpmn.service.DmnDecisionService;
 import com.example.bpmn.service.ProcessInstanceService;
@@ -28,22 +34,31 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class ProcessInstanceServiceImpl implements ProcessInstanceService {
     private static final Logger logger = LoggerFactory.getLogger(ProcessInstanceServiceImpl.class);
+    private static final String SYSTEM_TIMER_STARTED_BY = "SYSTEM_TIMER";
+
     private final BpmnProcessRepository bpmnProcessRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final TaskRepository taskRepository;
     private final DmnDecisionService dmnDecisionService;
+    private final ProcessInstanceTimerRepository processInstanceTimerRepository;
+    private final BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository;
 
     public ProcessInstanceServiceImpl(BpmnProcessRepository bpmnProcessRepository,
                                        ProcessInstanceRepository processInstanceRepository,
                                        TaskRepository taskRepository,
-                                       DmnDecisionService dmnDecisionService) {
+                                       DmnDecisionService dmnDecisionService,
+                                       ProcessInstanceTimerRepository processInstanceTimerRepository,
+                                       BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository) {
         this.bpmnProcessRepository = bpmnProcessRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.taskRepository = taskRepository;
         this.dmnDecisionService = dmnDecisionService;
+        this.processInstanceTimerRepository = processInstanceTimerRepository;
+        this.bpmnProcessStartTimerRepository = bpmnProcessStartTimerRepository;
     }
 
     @Override
@@ -58,30 +73,10 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
             throw new AppException("BPMN process has no XML to execute", 400);
         }
 
-        BpmnProcessDefinition definition = BpmnGraphParser.parse(process.getBpmnXml());
         Map<String, Object> variables = request.getVariables() != null
                 ? new HashMap<>(request.getVariables()) : new HashMap<>();
 
-        LocalDateTime now = LocalDateTime.now();
-        ProcessInstance instance = new ProcessInstance();
-        instance.setId(UUID.randomUUID().toString());
-        instance.setProcessId(process.getId());
-        instance.setProcessVersion(process.getVersion());
-        instance.setStatus("RUNNING");
-        instance.setVariables(variables);
-        instance.setStartedBy(requesterUsername);
-        instance.setStartedAt(now);
-        instance.setCreatedAt(now);
-        instance.setUpdatedAt(now);
-
-        // Insert the instance row first - any task created below has a FK to it.
-        processInstanceRepository.save(instance);
-
-        AdvanceResult result = ProcessEngine.advance(definition, definition.getStartNodeId(), variables,
-                Set.of(), Set.of(), dmnDecisionService::evaluate);
-        applyAdvanceResult(instance, definition, result);
-
-        ProcessInstance saved = processInstanceRepository.save(instance);
+        ProcessInstance saved = createAndAdvanceInstance(process, variables, requesterUsername);
         logger.info("Started process instance {} for BPMN process {}", saved.getId(), saved.getProcessId());
         return ProcessInstanceMapper.toResponse(saved);
     }
@@ -101,10 +96,111 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
         return new PageResponse<>(content, page, size, processInstanceRepository.count());
     }
 
+    @Override
+    public void processDueStartTimers() {
+        LocalDateTime now = LocalDateTime.now();
+        for (BpmnProcessStartTimer schedule : bpmnProcessStartTimerRepository.findDue(now)) {
+            try {
+                fireStartTimer(schedule, now);
+            } catch (Exception e) {
+                logger.error("Failed to fire start timer for process {}: {}", schedule.getProcessId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private void fireStartTimer(BpmnProcessStartTimer schedule, LocalDateTime now) {
+        BpmnProcess process = bpmnProcessRepository.findById(schedule.getProcessId()).orElse(null);
+        if (process == null) {
+            bpmnProcessStartTimerRepository.deleteByProcessId(schedule.getProcessId());
+            return;
+        }
+
+        BpmnNode startNode;
+        try {
+            BpmnProcessDefinition definition = BpmnGraphParser.parse(process.getBpmnXml());
+            startNode = definition.getNode(definition.getStartNodeId());
+        } catch (Exception e) {
+            logger.warn("Process {} has invalid BPMN XML - disabling its start-timer schedule: {}",
+                    process.getId(), e.getMessage());
+            bpmnProcessStartTimerRepository.deleteByProcessId(schedule.getProcessId());
+            return;
+        }
+        boolean stillHasTimer = startNode.getTimerDate() != null || startNode.getTimerDuration() != null
+                || startNode.getTimerCycle() != null;
+        if (!stillHasTimer) {
+            // The live XML is the source of truth, not the schedule row - it was edited since.
+            bpmnProcessStartTimerRepository.deleteByProcessId(schedule.getProcessId());
+            return;
+        }
+
+        ProcessInstance created = createAndAdvanceInstance(process, new HashMap<>(), SYSTEM_TIMER_STARTED_BY);
+        logger.info("Auto-started process instance {} for process {} from its start timer", created.getId(), process.getId());
+
+        rescheduleOrClearStartTimer(schedule, startNode, now);
+    }
+
+    /**
+     * After a start timer fires, decides whether it should fire again - same decrement pattern as
+     * {@code TaskServiceImpl.rescheduleOrClearTimer}, applied to a process schedule instead of a task.
+     */
+    private void rescheduleOrClearStartTimer(BpmnProcessStartTimer schedule, BpmnNode startNode, LocalDateTime now) {
+        Integer remaining = schedule.getRepeatsRemaining();
+        if (remaining == null) {
+            bpmnProcessStartTimerRepository.deleteByProcessId(schedule.getProcessId());
+            return;
+        }
+        TimerCycle cycle = TimerCycle.parse(startNode.getTimerCycle());
+        if (remaining == -1) {
+            schedule.setNextFireAt(now.plus(cycle.interval()));
+            schedule.setUpdatedAt(now);
+            bpmnProcessStartTimerRepository.save(schedule);
+            return;
+        }
+        int next = remaining - 1;
+        if (next > 0) {
+            schedule.setNextFireAt(now.plus(cycle.interval()));
+            schedule.setRepeatsRemaining(next);
+            schedule.setUpdatedAt(now);
+            bpmnProcessStartTimerRepository.save(schedule);
+        } else {
+            bpmnProcessStartTimerRepository.deleteByProcessId(schedule.getProcessId());
+        }
+    }
+
+    /** Creates a brand-new instance for {@code process}, walks it from the start node, and persists the result. Shared by manual starts and timer-triggered starts. */
+    private ProcessInstance createAndAdvanceInstance(BpmnProcess process, Map<String, Object> initialVariables, String startedBy) {
+        BpmnProcessDefinition definition = BpmnGraphParser.parse(process.getBpmnXml());
+        Map<String, Object> variables = new HashMap<>(initialVariables);
+
+        LocalDateTime now = LocalDateTime.now();
+        ProcessInstance instance = new ProcessInstance();
+        instance.setId(UUID.randomUUID().toString());
+        instance.setProcessId(process.getId());
+        instance.setProcessVersion(process.getVersion());
+        instance.setStatus("RUNNING");
+        instance.setVariables(variables);
+        instance.setStartedBy(startedBy);
+        instance.setStartedAt(now);
+        instance.setCreatedAt(now);
+        instance.setUpdatedAt(now);
+
+        // Insert the instance row first - any task/timer wait created below has a FK to it.
+        processInstanceRepository.save(instance);
+
+        AdvanceResult result = ProcessEngine.advance(definition, definition.getStartNodeId(), variables,
+                Set.of(), Set.of(), dmnDecisionService::evaluate);
+        applyAdvanceResult(instance, definition, result);
+
+        return processInstanceRepository.save(instance);
+    }
+
     private void applyAdvanceResult(ProcessInstance instance, BpmnProcessDefinition definition, AdvanceResult result) {
         LocalDateTime now = LocalDateTime.now();
         for (String nodeId : result.getNewUserTaskNodeIds()) {
             createTaskForNode(instance, definition, nodeId);
+        }
+        for (String nodeId : result.getNewTimerWaitNodeIds()) {
+            createTimerWaitForNode(instance, definition, nodeId);
         }
         instance.setVariables(result.getUpdatedVariables());
         instance.setPendingJoinArrivals(result.getPendingJoinArrivals());
@@ -114,7 +210,10 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
             instance.setCompletedAt(now);
         } else {
             instance.setStatus("RUNNING");
-            instance.setCurrentNodeId(String.join(",", result.getNewUserTaskNodeIds()));
+            instance.setCurrentNodeId(Stream.concat(
+                            result.getNewUserTaskNodeIds().stream(),
+                            result.getNewTimerWaitNodeIds().stream())
+                    .collect(Collectors.joining(",")));
         }
         instance.setUpdatedAt(now);
     }
@@ -132,6 +231,20 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         task.setDueDate(TaskServiceImpl.computeBoundaryTimerDueDate(definition, nodeId, now));
+        task.setTimerRepeatsRemaining(TaskServiceImpl.computeInitialTimerRepeats(definition, nodeId));
         taskRepository.save(task);
+    }
+
+    private void createTimerWaitForNode(ProcessInstance instance, BpmnProcessDefinition definition, String nodeId) {
+        BpmnNode node = definition.getNode(nodeId);
+        LocalDateTime now = LocalDateTime.now();
+
+        ProcessInstanceTimer timer = new ProcessInstanceTimer();
+        timer.setId(UUID.randomUUID().toString());
+        timer.setProcessInstanceId(instance.getId());
+        timer.setNodeId(nodeId);
+        timer.setDueDate(TimerSchedule.computeNextFireAt(node, now));
+        timer.setCreatedAt(now);
+        processInstanceTimerRepository.save(timer);
     }
 }
