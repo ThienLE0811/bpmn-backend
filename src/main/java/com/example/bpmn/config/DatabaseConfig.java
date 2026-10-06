@@ -14,7 +14,7 @@ import java.sql.SQLException;
 
 public class DatabaseConfig {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseConfig.class);
-    private static HikariDataSource dataSource;
+    private static DataSource dataSource;
 
     private DatabaseConfig() {
     }
@@ -112,10 +112,21 @@ public class DatabaseConfig {
         logger.info("Database schema migrated via Flyway.");
     }
 
+    /**
+     * Replaces the pool returned by {@link #getDataSource()}. Test seam: the repository
+     * integration tests use it to point the repositories at a throwaway database without
+     * touching application.properties or the DATABASE_URL env var. Not used by application code.
+     */
+    public static synchronized void useDataSource(DataSource replacement) {
+        close();
+        dataSource = replacement;
+    }
+
     public static synchronized void close() {
-        if (dataSource != null && !dataSource.isClosed()) {
-            dataSource.close();
+        if (dataSource instanceof HikariDataSource hikariDataSource && !hikariDataSource.isClosed()) {
+            hikariDataSource.close();
             logger.info("Database connection pool closed.");
         }
+        dataSource = null;
     }
 }
