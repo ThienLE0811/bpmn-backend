@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "121-java-object-oriented-design": {
+      "source": "jabrena/plinth",
+      "sourceType": "github",
+      "skillPath": "skills/121-java-object-oriented-design/SKILL.md",
+      "computedHash": "3eaeb2b6a8947a33b056126d4192d75379bf464cb866270e78aa5227486c3c26"
+    },
+    "java-code-review": {
+      "source": "decebals/claude-code-java",
+      "sourceType": "github",
+      "skillPath": "skills/java-code-review/SKILL.md",
+      "computedHash": "89769dc51640110d8194a16e1a2c9a85a39ecc995cb8fe1a9db0b0428e29b7be"
+    },
+    "java-docs": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/java-docs/SKILL.md",
+      "computedHash": "76cf49efcd6e99d95031c78e56615dbaf641a756e852acf7e87f9197dfab43e0"
+    },
+    "java-junit": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/java-junit/SKILL.md",
+      "computedHash": "fbf3cb0d47ffb44bdb6e1ebcc4d89dd7083208efdfc5b88f316c8bc2b58250b5"
+    }
+  }
+}
