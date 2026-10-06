@@ -146,7 +146,22 @@ Hỗ trợ: start event, end event, user task, exclusive gateway (điều kiện
 
 `mvn test` — JUnit 5, không dùng Mockito. Repository được fake bằng anonymous class backed bởi `Map`/`ConcurrentHashMap` (xem `AuthServiceTest`, `TaskServiceTest`, `ProcessInstanceServiceTest`, `DmnDecisionServiceTest`, `BpmnProcessServiceTest` để theo đúng convention khi viết test mới). Engine có test riêng ở `engine/BpmnGraphParserTest`, `engine/ProcessEngineTest` (fixture BPMN XML dùng chung trong `engine/BpmnFixtures`).
 
-Đã có test cho: Auth, Task, ProcessInstance, BpmnProcess, DmnDecision, và toàn bộ engine (parser + advance). **Chưa có test cho `UserService`** và chưa có test tích hợp ở mức HTTP/controller.
+Đã có test cho: Auth, User, Task, ProcessInstance, BpmnProcess, DmnDecision, toàn bộ engine (parser + advance), tầng repository (SQL thật) và tầng HTTP.
+
+### Test tầng HTTP (`http/*Test`)
+
+`RouteTest` test thuần `Route.split`/`match`/`matchesMethod`. `BaseControllerTest` và `RequestContextTest` dựng một `HttpServer` thật trên cổng trống (mount controller giả theo đúng cách `RouteConfig` mount ở production, kể cả virtual-thread executor) rồi bắn request bằng `HttpClient` của JDK — **không cần dependency mới, không cần database**.
+
+Phủ: xác thực Bearer token (thiếu header / không phải Bearer / token hỏng / sai chữ ký / hết hạn đều phải là 401, và token hợp lệ phải set đúng `authUserId`/`authUsername`/`authRole`), 404 vs 405, thứ tự khớp route, map `HttpResult`/`null`/`AppException`/exception lạ ra status code, preflight `OPTIONS` + header CORS, JSON UTF-8, và phía `RequestContext`: decode path/query param, clamp `page`/`size`, body rỗng hoặc JSON sai → 400.
+
+### Test tích hợp tầng repository (`repository/Postgres*RepositoryTest`)
+
+Service test fake repository bằng `Map` nên không chạy một dòng SQL nào. Phần SQL/JDBC viết tay trong `repository/impl` được phủ riêng bởi nhóm test kế thừa `PostgresRepositoryTestBase`, chạy trên PostgreSQL thật:
+
+- Dùng đúng `db.url`/`db.username`/`db.password` của app (override được bằng env `DB_URL`/`DB_USERNAME`/`DB_PASSWORD`), nhưng **thay tên database thành `bpmn_repo_test`** — test `TRUNCATE` mọi bảng trước mỗi case nên tuyệt đối không được trỏ vào database thật.
+- Database này được tạo tự động ở lần chạy đầu, schema dựng bằng chính Flyway migration của production → migration nào không còn apply được lên database rỗng sẽ fail ngay tại đây.
+- Không có PostgreSQL thì cả nhóm test **bị skip** (JUnit assumption) chứ không fail, nên `mvn test` vẫn chạy được trên máy không có DB — và cũng vì vậy nhóm test này hiện **bị skip trên CI** (workflow chưa có service Postgres).
+- `DatabaseConfig.useDataSource(...)` tồn tại chỉ để làm điểm nối cho nhóm test này (repository gọi `DatabaseConfig.getConnection()` trực tiếp, không inject `DataSource`).
 
 ---
 
