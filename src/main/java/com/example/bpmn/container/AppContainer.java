@@ -4,6 +4,7 @@ import com.example.bpmn.connector.ConnectorRegistry;
 import com.example.bpmn.connector.HttpConnector;
 import com.example.bpmn.controller.AuthController;
 import com.example.bpmn.controller.BpmnProcessController;
+import com.example.bpmn.controller.ConnectorController;
 import com.example.bpmn.controller.DmnDecisionController;
 import com.example.bpmn.controller.ProcessInstanceController;
 import com.example.bpmn.controller.TaskController;
@@ -78,6 +79,7 @@ public class AppContainer {
     private final AuthController authController;
     private final ProcessInstanceController processInstanceController;
     private final TaskController taskController;
+    private final ConnectorController connectorController;
 
     public AppContainer() {
         // 1. Repositories initialization
@@ -110,6 +112,7 @@ public class AppContainer {
         this.authController = new AuthController(this.authService);
         this.processInstanceController = new ProcessInstanceController(this.processInstanceService);
         this.taskController = new TaskController(this.taskService);
+        this.connectorController = new ConnectorController(this.connectorRegistry);
     }
 
     public BpmnProcessController getBpmnProcessController() {
@@ -134,6 +137,10 @@ public class AppContainer {
 
     public TaskController getTaskController() {
         return taskController;
+    }
+
+    public ConnectorController getConnectorController() {
+        return connectorController;
     }
 
     public ConnectorRegistry getConnectorRegistry() {

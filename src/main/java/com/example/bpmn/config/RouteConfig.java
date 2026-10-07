@@ -32,6 +32,7 @@ public class RouteConfig {
         registerUserRoutes(server, container);
         registerProcessInstanceRoutes(server, container);
         registerTaskRoutes(server, container);
+        registerConnectorRoutes(server, container);
 
         logger.info("All API routes registered successfully.");
     }
@@ -99,5 +100,13 @@ public class RouteConfig {
     private static void registerTaskRoutes(HttpServer server, AppContainer container) {
         server.createContext("/api/tasks", container.getTaskController());
         logger.info("  [Task] Registered: /api/tasks");
+    }
+
+    /**
+     * Connector Module Routes - read-only list of the connector ids a service task can bind to.
+     */
+    private static void registerConnectorRoutes(HttpServer server, AppContainer container) {
+        server.createContext("/api/connectors", container.getConnectorController());
+        logger.info("  [Connector] Registered: /api/connectors");
     }
 }
