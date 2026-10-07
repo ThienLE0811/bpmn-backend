@@ -6,6 +6,7 @@ import com.example.bpmn.controller.AuthController;
 import com.example.bpmn.controller.BpmnProcessController;
 import com.example.bpmn.controller.ConnectorController;
 import com.example.bpmn.controller.DmnDecisionController;
+import com.example.bpmn.controller.OperateController;
 import com.example.bpmn.controller.ProcessInstanceController;
 import com.example.bpmn.controller.TaskController;
 import com.example.bpmn.controller.UserController;
@@ -78,6 +79,7 @@ public class AppContainer {
     private final UserController userController;
     private final AuthController authController;
     private final ProcessInstanceController processInstanceController;
+    private final OperateController operateController;
     private final TaskController taskController;
     private final ConnectorController connectorController;
 
@@ -102,7 +104,7 @@ public class AppContainer {
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
         this.authService = new AuthServiceImpl(this.userRepository, this.refreshTokenRepository);
-        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.bpmnProcessStartTimerRepository, this.connectorRegistry);
+        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.bpmnProcessVersionRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.bpmnProcessStartTimerRepository, this.connectorRegistry);
         this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.connectorRegistry);
 
         // 4. Controllers initialization
@@ -111,6 +113,7 @@ public class AppContainer {
         this.userController = new UserController(this.userService);
         this.authController = new AuthController(this.authService);
         this.processInstanceController = new ProcessInstanceController(this.processInstanceService);
+        this.operateController = new OperateController(this.processInstanceService);
         this.taskController = new TaskController(this.taskService);
         this.connectorController = new ConnectorController(this.connectorRegistry);
     }
@@ -129,6 +132,10 @@ public class AppContainer {
 
     public AuthController getAuthController() {
         return authController;
+    }
+
+    public OperateController getOperateController() {
+        return operateController;
     }
 
     public ProcessInstanceController getProcessInstanceController() {

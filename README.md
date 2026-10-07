@@ -160,7 +160,13 @@ Giá trị bọc `${...}` là biểu thức JEXL, còn lại là chuỗi literal
 
 **Chặn SSRF**: `connector.http.allowed-hosts` quyết định connector được gọi tới host nào — **mặc định rỗng nghĩa là chặn tất cả**, vì ai sửa được BPMN diagram thì cũng có thể bắt server gọi vào địa chỉ nội bộ rồi đọc kết quả ra qua process variable. Cú pháp: danh sách ngăn bởi dấu phẩy, `*.example.com` khớp sub-domain (không khớp `example.com`), `*` tắt hẳn kiểm tra (chỉ dùng khi dev). Redirect không bao giờ được follow, nên host hợp lệ không thể bật request sang host bị cấm. **Điểm yếu còn lại**: kiểm tra theo *tên*, nên một tên được phép mà bản ghi DNS bị đổi trỏ vào nội bộ thì vẫn lọt.
 
-Connector chạy **đồng bộ** ngay trong request start/complete. Khi nó lỗi, instance không bị mất: chuyển sang `FAILED` kèm `incident_node_id`/`incident_message` để xem được lỗi ở node nào. **Chưa có**: endpoint retry, secret store (đừng để API key thẳng trong BPMN XML — XML được version và trả về qua API), và connector không idempotent khi chạy lại.
+Connector chạy **đồng bộ** ngay trong request start/complete. Khi nó lỗi, instance không bị mất: chuyển sang `FAILED` kèm `incident_node_id`/`incident_message` để xem được lỗi ở node nào.
+
+**Xem và retry incident**: `GET /api/process-instances/:id/incidents` trả về 0-1 phần tử (khớp contract `ProcessIncident` đã có sẵn ở Angular `operate-api.service.ts`, viết trước cả khi backend hỗ trợ — `id` dùng luôn `instanceId` vì mỗi instance chỉ giữ một incident). `POST /api/operate/incidents/:id/retry` chạy lại engine từ đúng `incident_node_id`, dùng **snapshot BPMN đúng version** instance đã start (không phải XML hiện tại của process, phòng trường hợp process bị sửa sau khi instance đã chạy) — connector lỗi lần nữa thì instance vẫn `FAILED` với message mới, không mất instance.
+
+`GET /api/process-instances` nhận thêm `status` (khớp chính xác, không phân biệt hoa thường) và `search` (so khớp con chuỗi trên id/processId/startedBy) — lọc trong bộ nhớ, cùng kiểu với `TaskServiceImpl.listTasks`, nên sẽ cần xem lại nếu bảng `process_instances` lớn.
+
+**Chưa có**: secret store (đừng để API key thẳng trong BPMN XML — XML được version và trả về qua API), và connector không idempotent khi chạy lại (kể cả qua retry).
 
 **Chưa hỗ trợ**: subprocess/call activity, script task, message/signal event. Không có process nào hiện có trong DB dev dùng các phần tử này, nhưng nếu import BPMN có chúng, engine sẽ lỗi khi gặp node lạ.
 

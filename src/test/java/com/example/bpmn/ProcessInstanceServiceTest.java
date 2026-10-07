@@ -4,17 +4,20 @@ import com.example.bpmn.dto.DmnDecisionRequest;
 import com.example.bpmn.dto.DmnDecisionResponse;
 import com.example.bpmn.dto.DmnDecisionUpdateRequest;
 import com.example.bpmn.dto.PageResponse;
+import com.example.bpmn.dto.ProcessIncidentResponse;
 import com.example.bpmn.dto.ProcessInstanceResponse;
 import com.example.bpmn.dto.StartProcessInstanceRequest;
 import com.example.bpmn.engine.ConnectorInvoker;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.BpmnProcess;
 import com.example.bpmn.model.BpmnProcessStartTimer;
+import com.example.bpmn.model.BpmnProcessVersion;
 import com.example.bpmn.model.ProcessInstance;
 import com.example.bpmn.model.ProcessInstanceTimer;
 import com.example.bpmn.model.Task;
 import com.example.bpmn.repository.BpmnProcessRepository;
 import com.example.bpmn.repository.BpmnProcessStartTimerRepository;
+import com.example.bpmn.repository.BpmnProcessVersionRepository;
 import com.example.bpmn.repository.ProcessInstanceRepository;
 import com.example.bpmn.repository.ProcessInstanceTimerRepository;
 import com.example.bpmn.repository.TaskRepository;
@@ -168,6 +171,7 @@ class ProcessInstanceServiceTest {
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final Map<String, ProcessInstanceTimer> timerWaits = new ConcurrentHashMap<>();
     private final Map<String, BpmnProcessStartTimer> startTimers = new ConcurrentHashMap<>();
+    private final List<BpmnProcessVersion> bpmnVersions = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -178,6 +182,7 @@ class ProcessInstanceServiceTest {
         startTimers.clear();
         connectorCalls.clear();
         connectorInvoker = (connectorId, inputs) -> Map.of();
+        bpmnVersions.clear();
 
         BpmnProcessRepository mockProcessRepo = new BpmnProcessRepository() {
             @Override
@@ -392,7 +397,27 @@ class ProcessInstanceServiceTest {
             }
         };
 
-        processInstanceService = new ProcessInstanceServiceImpl(mockProcessRepo, mockInstanceRepo, mockTaskRepo, mockDmnService,
+        BpmnProcessVersionRepository mockVersionRepo = new BpmnProcessVersionRepository() {
+            @Override
+            public BpmnProcessVersion save(BpmnProcessVersion version) {
+                bpmnVersions.add(version);
+                return version;
+            }
+
+            @Override
+            public List<BpmnProcessVersion> findByProcessId(String processId) {
+                return bpmnVersions.stream().filter(v -> processId.equals(v.getProcessId())).toList();
+            }
+
+            @Override
+            public Optional<BpmnProcessVersion> findByProcessIdAndVersion(String processId, int version) {
+                return bpmnVersions.stream()
+                        .filter(v -> processId.equals(v.getProcessId()) && version == v.getVersion())
+                        .findFirst();
+            }
+        };
+
+        processInstanceService = new ProcessInstanceServiceImpl(mockProcessRepo, mockVersionRepo, mockInstanceRepo, mockTaskRepo, mockDmnService,
                 mockTimerWaitRepo, mockStartTimerRepo, (connectorId, inputs) -> {
                     connectorCalls.add(inputs);
                     return connectorInvoker.invoke(connectorId, inputs);
@@ -414,6 +439,16 @@ class ProcessInstanceServiceTest {
         BpmnProcess process = new BpmnProcess(id, "key_" + id, "Process " + id, 1, bpmnXml, "ACTIVE");
         processes.put(id, process);
         return process;
+    }
+
+    /** startInstance walks the live process XML, not a version snapshot - retryIncident needs a snapshot to resume from, so tests exercising it must seed one explicitly. */
+    private void seedProcessVersion(String processId, int version, String bpmnXml) {
+        BpmnProcessVersion v = new BpmnProcessVersion();
+        v.setId(UUID.randomUUID().toString());
+        v.setProcessId(processId);
+        v.setVersion(version);
+        v.setBpmnXml(bpmnXml);
+        bpmnVersions.add(v);
     }
 
     private StartProcessInstanceRequest startRequest(String processId, Map<String, Object> variables) {
@@ -668,5 +703,119 @@ class ProcessInstanceServiceTest {
         // The instance row survives the failure so it can be inspected and resumed.
         assertEquals(1, instances.size());
         assertEquals("FAILED", instances.values().iterator().next().getStatus());
+    }
+
+    @Test
+    @DisplayName("Should return no incidents for an instance that never failed")
+    void testGetIncidentsEmptyForHealthyInstance() {
+        seedProcess("proc-1", SIMPLE_PROCESS_XML);
+        ProcessInstanceResponse response = processInstanceService.startInstance(startRequest("proc-1", null), "alice");
+
+        assertEquals(List.of(), processInstanceService.getIncidents(response.getId()));
+    }
+
+    @Test
+    @DisplayName("Should return a single open incident, with the node's display name resolved, for a FAILED instance")
+    void testGetIncidentsReturnsOpenIncidentForFailedInstance() {
+        seedProcess("proc-1", CONNECTOR_PROCESS_XML);
+        seedProcessVersion("proc-1", 1, CONNECTOR_PROCESS_XML);
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("connect timed out", 502);
+        };
+        ProcessInstanceResponse started = processInstanceService.startInstance(
+                startRequest("proc-1", Map.of("customerId", "C-1")), "alice");
+
+        List<ProcessIncidentResponse> incidents = processInstanceService.getIncidents(started.getId());
+
+        assertEquals(1, incidents.size());
+        ProcessIncidentResponse incident = incidents.get(0);
+        assertEquals(started.getId(), incident.getId());
+        assertEquals(started.getId(), incident.getProcessInstanceId());
+        assertEquals("call1", incident.getActivityId());
+        assertEquals("Check credit", incident.getActivityName());
+        assertEquals("OPEN", incident.getState());
+        assertTrue(incident.getErrorMessage().contains("connect timed out"));
+    }
+
+    @Test
+    @DisplayName("Should throw 404 for an unknown instance id rather than returning an empty incident list")
+    void testGetIncidentsThrowsForUnknownInstance() {
+        AppException ex = assertThrows(AppException.class, () -> processInstanceService.getIncidents("missing"));
+        assertEquals(404, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Should re-run the failed connector on retry and complete the instance once it succeeds")
+    void testRetryIncidentReRunsConnectorAndCompletes() {
+        seedProcess("proc-1", CONNECTOR_PROCESS_XML);
+        seedProcessVersion("proc-1", 1, CONNECTOR_PROCESS_XML);
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("connect timed out", 502);
+        };
+        ProcessInstanceResponse failed = processInstanceService.startInstance(
+                startRequest("proc-1", Map.of("customerId", "C-1")), "alice");
+        assertEquals("FAILED", failed.getStatus());
+
+        connectorInvoker = (connectorId, inputs) -> Map.of("score", 720);
+        ProcessInstanceResponse retried = processInstanceService.retryIncident(failed.getId(), "alice");
+
+        assertEquals("COMPLETED", retried.getStatus());
+        assertEquals(720, retried.getVariables().get("creditScore"));
+        assertNull(retried.getIncidentMessage());
+        assertNull(retried.getIncidentNodeId());
+        assertEquals(List.of(), processInstanceService.getIncidents(failed.getId()));
+    }
+
+    @Test
+    @DisplayName("Should keep the instance FAILED with a fresh incident message when the retried connector fails again")
+    void testRetryIncidentStaysFailedWhenConnectorFailsAgain() {
+        seedProcess("proc-1", CONNECTOR_PROCESS_XML);
+        seedProcessVersion("proc-1", 1, CONNECTOR_PROCESS_XML);
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("connect timed out", 502);
+        };
+        ProcessInstanceResponse failed = processInstanceService.startInstance(
+                startRequest("proc-1", Map.of("customerId", "C-1")), "alice");
+
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("still unreachable", 502);
+        };
+        ProcessInstanceResponse retried = processInstanceService.retryIncident(failed.getId(), "alice");
+
+        assertEquals("FAILED", retried.getStatus());
+        assertEquals("call1", retried.getIncidentNodeId());
+        assertTrue(retried.getIncidentMessage().contains("still unreachable"));
+    }
+
+    @Test
+    @DisplayName("Should reject retrying an instance that isn't FAILED")
+    void testRetryIncidentRejectsNonFailedInstance() {
+        seedProcess("proc-1", SIMPLE_PROCESS_XML);
+        ProcessInstanceResponse running = processInstanceService.startInstance(startRequest("proc-1", null), "alice");
+
+        AppException ex = assertThrows(AppException.class,
+                () -> processInstanceService.retryIncident(running.getId(), "alice"));
+
+        assertEquals(409, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("listInstances should filter by status and by a search term matching id/processId/startedBy")
+    void testListInstancesFiltersByStatusAndSearch() {
+        seedProcess("proc-1", SIMPLE_PROCESS_XML);
+        seedProcess("proc-2", NO_USER_TASK_PROCESS_XML);
+        ProcessInstanceResponse running = processInstanceService.startInstance(startRequest("proc-1", null), "alice");
+        processInstanceService.startInstance(startRequest("proc-2", null), "bob");
+
+        PageResponse<ProcessInstanceResponse> byStatus = processInstanceService.listInstances(1, 10, "running", null);
+        assertEquals(1, byStatus.getContent().size());
+        assertEquals(running.getId(), byStatus.getContent().get(0).getId());
+
+        PageResponse<ProcessInstanceResponse> bySearch = processInstanceService.listInstances(1, 10, null, "BOB");
+        assertEquals(1, bySearch.getContent().size());
+        assertEquals("bob", bySearch.getContent().get(0).getStartedBy());
+
+        PageResponse<ProcessInstanceResponse> unfiltered = processInstanceService.listInstances(1, 10, null, null);
+        assertEquals(2, unfiltered.getContent().size());
     }
 }

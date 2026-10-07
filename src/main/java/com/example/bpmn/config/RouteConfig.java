@@ -31,6 +31,7 @@ public class RouteConfig {
         registerDmnRoutes(server, container);
         registerUserRoutes(server, container);
         registerProcessInstanceRoutes(server, container);
+        registerOperateRoutes(server, container);
         registerTaskRoutes(server, container);
         registerConnectorRoutes(server, container);
 
@@ -92,6 +93,14 @@ public class RouteConfig {
     private static void registerProcessInstanceRoutes(HttpServer server, AppContainer container) {
         server.createContext("/api/process-instances", container.getProcessInstanceController());
         logger.info("  [ProcessInstance] Registered: /api/process-instances");
+    }
+
+    /**
+     * Operate Module Routes - incident retry for now.
+     */
+    private static void registerOperateRoutes(HttpServer server, AppContainer container) {
+        server.createContext("/api/operate", container.getOperateController());
+        logger.info("  [Operate] Registered: /api/operate");
     }
 
     /**
