@@ -1,5 +1,7 @@
 package com.example.bpmn.container;
 
+import com.example.bpmn.connector.ConnectorRegistry;
+import com.example.bpmn.connector.HttpConnector;
 import com.example.bpmn.controller.AuthController;
 import com.example.bpmn.controller.BpmnProcessController;
 import com.example.bpmn.controller.DmnDecisionController;
@@ -39,6 +41,8 @@ import com.example.bpmn.service.impl.ProcessInstanceServiceImpl;
 import com.example.bpmn.service.impl.TaskServiceImpl;
 import com.example.bpmn.service.impl.UserServiceImpl;
 
+import java.util.List;
+
 /**
  * Dependency Injection container managing repositories, services, and controllers.
  */
@@ -55,6 +59,9 @@ public class AppContainer {
     private final TaskRepository taskRepository;
     private final ProcessInstanceTimerRepository processInstanceTimerRepository;
     private final BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository;
+
+    // Connectors available to service tasks
+    private final ConnectorRegistry connectorRegistry;
 
     // Services
     private final BpmnProcessService bpmnProcessService;
@@ -85,15 +92,18 @@ public class AppContainer {
         this.processInstanceTimerRepository = new PostgresProcessInstanceTimerRepository();
         this.bpmnProcessStartTimerRepository = new PostgresBpmnProcessStartTimerRepository();
 
-        // 2. Services initialization
+        // 2. Connectors a serviceTask can bind to via <camunda:connectorId>
+        this.connectorRegistry = new ConnectorRegistry(List.of(new HttpConnector()));
+
+        // 3. Services initialization
         this.bpmnProcessService = new BpmnProcessServiceImpl(this.bpmnProcessRepository, this.bpmnProcessVersionRepository, this.bpmnProcessStartTimerRepository);
         this.dmnDecisionService = new DmnDecisionServiceImpl(this.dmnDecisionRepository, this.dmnDecisionVersionRepository);
         this.userService = new UserServiceImpl(this.userRepository);
         this.authService = new AuthServiceImpl(this.userRepository, this.refreshTokenRepository);
-        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.bpmnProcessStartTimerRepository);
-        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService, this.processInstanceTimerRepository);
+        this.processInstanceService = new ProcessInstanceServiceImpl(this.bpmnProcessRepository, this.processInstanceRepository, this.taskRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.bpmnProcessStartTimerRepository, this.connectorRegistry);
+        this.taskService = new TaskServiceImpl(this.taskRepository, this.processInstanceRepository, this.bpmnProcessVersionRepository, this.dmnDecisionService, this.processInstanceTimerRepository, this.connectorRegistry);
 
-        // 3. Controllers initialization
+        // 4. Controllers initialization
         this.bpmnProcessController = new BpmnProcessController(this.bpmnProcessService);
         this.dmnDecisionController = new DmnDecisionController(this.dmnDecisionService);
         this.userController = new UserController(this.userService);
@@ -124,6 +134,10 @@ public class AppContainer {
 
     public TaskController getTaskController() {
         return taskController;
+    }
+
+    public ConnectorRegistry getConnectorRegistry() {
+        return connectorRegistry;
     }
 
     public BpmnProcessService getBpmnProcessService() {

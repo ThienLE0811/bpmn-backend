@@ -6,6 +6,7 @@ import com.example.bpmn.dto.DmnDecisionResponse;
 import com.example.bpmn.dto.DmnDecisionUpdateRequest;
 import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.dto.TaskResponse;
+import com.example.bpmn.engine.ConnectorInvoker;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.BpmnProcessVersion;
 import com.example.bpmn.model.ProcessInstance;
@@ -189,7 +190,34 @@ class TaskServiceTest {
             </definitions>
             """;
 
+    private static final String CONNECTOR_AFTER_TASK_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="defs" targetNamespace="http://example.com">
+              <process id="connector_after_task_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="task1" />
+                <userTask id="task1" name="Approve" />
+                <sequenceFlow id="f2" sourceRef="task1" targetRef="call1" />
+                <serviceTask id="call1" name="Notify">
+                  <extensionElements>
+                    <camunda:connector>
+                      <camunda:connectorId>http</camunda:connectorId>
+                      <camunda:inputOutput>
+                        <camunda:inputParameter name="url">https://api.example.com/notify</camunda:inputParameter>
+                      </camunda:inputOutput>
+                    </camunda:connector>
+                  </extensionElements>
+                </serviceTask>
+                <sequenceFlow id="f3" sourceRef="call1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
     private TaskService taskService;
+    /** Reassigned per test so the fake connector can succeed or fail. */
+    private ConnectorInvoker connectorInvoker = (connectorId, inputs) -> Map.of();
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
     private final Map<String, ProcessInstance> instances = new ConcurrentHashMap<>();
     private final List<BpmnProcessVersion> bpmnVersions = new ArrayList<>();
@@ -381,7 +409,8 @@ class TaskServiceTest {
             }
         };
 
-        taskService = new TaskServiceImpl(mockTaskRepo, mockInstanceRepo, mockVersionRepo, mockDmnService, mockTimerWaitRepo);
+        taskService = new TaskServiceImpl(mockTaskRepo, mockInstanceRepo, mockVersionRepo, mockDmnService, mockTimerWaitRepo,
+                (connectorId, inputs) -> connectorInvoker.invoke(connectorId, inputs));
     }
 
     private ProcessInstanceTimer seedTimerWait(ProcessInstance instance, String nodeId, LocalDateTime dueDate) {
@@ -823,5 +852,41 @@ class TaskServiceTest {
 
         assertEquals(1, timerWaits.size());
         assertEquals("RUNNING", instances.get(instance.getId()).getStatus());
+    }
+
+    @Test
+    @DisplayName("Should keep the task completed but park the instance in FAILED when the next service task's connector fails")
+    void testCompleteTaskRecordsIncidentWhenConnectorFails() {
+        ProcessInstance instance = seedInstance("proc-1", 1, CONNECTOR_AFTER_TASK_PROCESS_XML, "task1");
+        Task task = seedTask(instance, "task1", "CLAIMED", "alice");
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("notify API returned HTTP 500", 502);
+        };
+
+        TaskResponse response = taskService.completeTask(task.getId(), "alice", "USER", null);
+
+        assertEquals("COMPLETED", response.getStatus());
+        ProcessInstance stored = instances.get(instance.getId());
+        assertEquals("FAILED", stored.getStatus());
+        assertEquals("call1", stored.getIncidentNodeId());
+        assertTrue(stored.getIncidentMessage().contains("notify API returned HTTP 500"));
+    }
+
+    @Test
+    @DisplayName("Should keep the variables submitted with the task even when the following connector fails")
+    void testCompleteTaskKeepsSubmittedVariablesWhenConnectorFails() {
+        ProcessInstance instance = seedInstance("proc-1", 1, CONNECTOR_AFTER_TASK_PROCESS_XML, "task1");
+        Task task = seedTask(instance, "task1", "CLAIMED", "alice");
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("notify API unreachable", 502);
+        };
+        CompleteTaskRequest request = new CompleteTaskRequest();
+        request.setVariables(Map.of("decision", "APPROVED"));
+
+        taskService.completeTask(task.getId(), "alice", "USER", request);
+
+        ProcessInstance stored = instances.get(instance.getId());
+        assertEquals("FAILED", stored.getStatus());
+        assertEquals("APPROVED", stored.getVariables().get("decision"));
     }
 }

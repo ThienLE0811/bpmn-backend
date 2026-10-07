@@ -7,6 +7,9 @@ import com.example.bpmn.engine.AdvanceResult;
 import com.example.bpmn.engine.BpmnGraphParser;
 import com.example.bpmn.engine.BpmnNode;
 import com.example.bpmn.engine.BpmnProcessDefinition;
+import com.example.bpmn.engine.ConnectorException;
+import com.example.bpmn.engine.ConnectorInvoker;
+import com.example.bpmn.engine.EngineCallbacks;
 import com.example.bpmn.engine.ProcessEngine;
 import com.example.bpmn.engine.TimerCycle;
 import com.example.bpmn.engine.TimerSchedule;
@@ -39,19 +42,20 @@ public class TaskServiceImpl implements TaskService {
     private final TaskRepository taskRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final BpmnProcessVersionRepository bpmnProcessVersionRepository;
-    private final DmnDecisionService dmnDecisionService;
     private final ProcessInstanceTimerRepository processInstanceTimerRepository;
+    private final EngineCallbacks engineCallbacks;
 
     public TaskServiceImpl(TaskRepository taskRepository,
                             ProcessInstanceRepository processInstanceRepository,
                             BpmnProcessVersionRepository bpmnProcessVersionRepository,
                             DmnDecisionService dmnDecisionService,
-                            ProcessInstanceTimerRepository processInstanceTimerRepository) {
+                            ProcessInstanceTimerRepository processInstanceTimerRepository,
+                            ConnectorInvoker connectorInvoker) {
         this.taskRepository = taskRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.bpmnProcessVersionRepository = bpmnProcessVersionRepository;
-        this.dmnDecisionService = dmnDecisionService;
         this.processInstanceTimerRepository = processInstanceTimerRepository;
+        this.engineCallbacks = new EngineCallbacks(dmnDecisionService::evaluate, connectorInvoker);
     }
 
     @Override
@@ -262,9 +266,23 @@ public class TaskServiceImpl implements TaskService {
         otherActiveNodeIds.addAll(processInstanceTimerRepository.findByProcessInstanceId(instance.getId()).stream()
                 .map(ProcessInstanceTimer::getNodeId)
                 .collect(Collectors.toSet()));
-        AdvanceResult result = ProcessEngine.advance(definition, fromNodeId, variables, pendingJoinArrivals,
-                otherActiveNodeIds, dmnDecisionService::evaluate);
+        AdvanceResult result;
+        try {
+            result = ProcessEngine.advance(definition, fromNodeId, variables, pendingJoinArrivals,
+                    otherActiveNodeIds, engineCallbacks);
+        } catch (ConnectorException e) {
+            // The task/timer that triggered this walk has already been consumed, so the failure is
+            // parked on the instance instead of being thrown - otherwise the branch would be lost.
+            // The variables submitted when completing the task are kept, so resuming doesn't ask
+            // for them again; only values a later step would have derived from them are missing.
+            instance.setVariables(variables);
+            instance.markFailed(e.getNodeId(), e.getMessage(), now);
+            logger.error("Process instance {} failed at service task {}: {}", instance.getId(), e.getNodeId(), e.getMessage(), e);
+            processInstanceRepository.save(instance);
+            return;
+        }
         instance.setVariables(result.getUpdatedVariables());
+        instance.clearIncident();
 
         for (String nodeId : result.getNewUserTaskNodeIds()) {
             createTaskForNode(instance, definition, nodeId);

@@ -12,7 +12,7 @@ public final class ProcessInstanceMapper {
         if (instance == null) {
             return null;
         }
-        return new ProcessInstanceResponse(
+        ProcessInstanceResponse response = new ProcessInstanceResponse(
                 instance.getId(),
                 instance.getProcessId(),
                 instance.getProcessVersion(),
@@ -25,5 +25,10 @@ public final class ProcessInstanceMapper {
                 instance.getCreatedAt(),
                 instance.getUpdatedAt()
         );
+        // Set apart from the constructor, which is already long enough - these two are null on
+        // every instance that hasn't failed.
+        response.setIncidentNodeId(instance.getIncidentNodeId());
+        response.setIncidentMessage(instance.getIncidentMessage());
+        return response;
     }
 }

@@ -7,6 +7,9 @@ import com.example.bpmn.engine.AdvanceResult;
 import com.example.bpmn.engine.BpmnGraphParser;
 import com.example.bpmn.engine.BpmnNode;
 import com.example.bpmn.engine.BpmnProcessDefinition;
+import com.example.bpmn.engine.ConnectorException;
+import com.example.bpmn.engine.ConnectorInvoker;
+import com.example.bpmn.engine.EngineCallbacks;
 import com.example.bpmn.engine.ProcessEngine;
 import com.example.bpmn.engine.TimerCycle;
 import com.example.bpmn.engine.TimerSchedule;
@@ -43,22 +46,23 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
     private final BpmnProcessRepository bpmnProcessRepository;
     private final ProcessInstanceRepository processInstanceRepository;
     private final TaskRepository taskRepository;
-    private final DmnDecisionService dmnDecisionService;
     private final ProcessInstanceTimerRepository processInstanceTimerRepository;
     private final BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository;
+    private final EngineCallbacks engineCallbacks;
 
     public ProcessInstanceServiceImpl(BpmnProcessRepository bpmnProcessRepository,
                                        ProcessInstanceRepository processInstanceRepository,
                                        TaskRepository taskRepository,
                                        DmnDecisionService dmnDecisionService,
                                        ProcessInstanceTimerRepository processInstanceTimerRepository,
-                                       BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository) {
+                                       BpmnProcessStartTimerRepository bpmnProcessStartTimerRepository,
+                                       ConnectorInvoker connectorInvoker) {
         this.bpmnProcessRepository = bpmnProcessRepository;
         this.processInstanceRepository = processInstanceRepository;
         this.taskRepository = taskRepository;
-        this.dmnDecisionService = dmnDecisionService;
         this.processInstanceTimerRepository = processInstanceTimerRepository;
         this.bpmnProcessStartTimerRepository = bpmnProcessStartTimerRepository;
+        this.engineCallbacks = new EngineCallbacks(dmnDecisionService::evaluate, connectorInvoker);
     }
 
     @Override
@@ -187,8 +191,17 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
         // Insert the instance row first - any task/timer wait created below has a FK to it.
         processInstanceRepository.save(instance);
 
-        AdvanceResult result = ProcessEngine.advance(definition, definition.getStartNodeId(), variables,
-                Set.of(), Set.of(), dmnDecisionService::evaluate);
+        AdvanceResult result;
+        try {
+            result = ProcessEngine.advance(definition, definition.getStartNodeId(), variables,
+                    Set.of(), Set.of(), engineCallbacks);
+        } catch (ConnectorException e) {
+            // The instance row already exists, so the failure is recorded on it rather than
+            // thrown away - the caller sees a FAILED instance explaining which node stopped it.
+            instance.markFailed(e.getNodeId(), e.getMessage(), LocalDateTime.now());
+            logger.error("Process instance {} failed at service task {}: {}", instance.getId(), e.getNodeId(), e.getMessage(), e);
+            return processInstanceRepository.save(instance);
+        }
         applyAdvanceResult(instance, definition, result);
 
         return processInstanceRepository.save(instance);
@@ -204,6 +217,7 @@ public class ProcessInstanceServiceImpl implements ProcessInstanceService {
         }
         instance.setVariables(result.getUpdatedVariables());
         instance.setPendingJoinArrivals(result.getPendingJoinArrivals());
+        instance.clearIncident();
         if (result.isFullyResolved()) {
             instance.setStatus("COMPLETED");
             instance.setCurrentNodeId(null);

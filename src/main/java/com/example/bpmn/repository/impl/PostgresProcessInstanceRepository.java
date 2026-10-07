@@ -26,15 +26,17 @@ public class PostgresProcessInstanceRepository implements ProcessInstanceReposit
     public ProcessInstance save(ProcessInstance instance) {
         String sql = """
             INSERT INTO process_instances
-                (id, process_id, process_version, status, current_node_id, variables, pending_join_arrivals, started_by, started_at, completed_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, process_id, process_version, status, current_node_id, variables, pending_join_arrivals, started_by, started_at, completed_at, created_at, updated_at, incident_node_id, incident_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO UPDATE
             SET status = EXCLUDED.status,
                 current_node_id = EXCLUDED.current_node_id,
                 variables = EXCLUDED.variables,
                 pending_join_arrivals = EXCLUDED.pending_join_arrivals,
                 completed_at = EXCLUDED.completed_at,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                incident_node_id = EXCLUDED.incident_node_id,
+                incident_message = EXCLUDED.incident_message
         """;
 
         try (Connection conn = DatabaseConfig.getConnection();
@@ -52,6 +54,8 @@ public class PostgresProcessInstanceRepository implements ProcessInstanceReposit
             stmt.setTimestamp(10, instance.getCompletedAt() != null ? Timestamp.valueOf(instance.getCompletedAt()) : null);
             stmt.setTimestamp(11, instance.getCreatedAt() != null ? Timestamp.valueOf(instance.getCreatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
             stmt.setTimestamp(12, instance.getUpdatedAt() != null ? Timestamp.valueOf(instance.getUpdatedAt()) : Timestamp.valueOf(LocalDateTime.now()));
+            stmt.setString(13, instance.getIncidentNodeId());
+            stmt.setString(14, instance.getIncidentMessage());
 
             stmt.executeUpdate();
             return instance;
@@ -169,6 +173,8 @@ public class PostgresProcessInstanceRepository implements ProcessInstanceReposit
         instance.setPendingJoinArrivals(pendingJoinArrivalsJson != null
                 ? JsonUtil.fromJson(pendingJoinArrivalsJson, Set.class) : Set.of());
 
+        instance.setIncidentNodeId(rs.getString("incident_node_id"));
+        instance.setIncidentMessage(rs.getString("incident_message"));
         instance.setStartedBy(rs.getString("started_by"));
 
         Timestamp startedAtTs = rs.getTimestamp("started_at");

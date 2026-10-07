@@ -12,6 +12,8 @@ public class ProcessInstance {
     private String currentNodeId;
     private Map<String, Object> variables;
     private Set<String> pendingJoinArrivals;
+    private String incidentNodeId;
+    private String incidentMessage;
     private String startedBy;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
@@ -76,6 +78,44 @@ public class ProcessInstance {
 
     public void setPendingJoinArrivals(Set<String> pendingJoinArrivals) {
         this.pendingJoinArrivals = pendingJoinArrivals;
+    }
+
+    /** Node the instance stopped at when its status is FAILED, or null - see {@link #markFailed}. */
+    public String getIncidentNodeId() {
+        return incidentNodeId;
+    }
+
+    public void setIncidentNodeId(String incidentNodeId) {
+        this.incidentNodeId = incidentNodeId;
+    }
+
+    /** Why the instance failed at {@link #getIncidentNodeId()}, or null. */
+    public String getIncidentMessage() {
+        return incidentMessage;
+    }
+
+    public void setIncidentMessage(String incidentMessage) {
+        this.incidentMessage = incidentMessage;
+    }
+
+    /**
+     * Parks the instance at the node that could not be executed - used when a service task's
+     * connector fails, where aborting would throw away a walk of an instance that already exists.
+     * Variables keep the values they had before the failed step, so the instance can be resumed
+     * from {@code nodeId} once the cause is fixed.
+     */
+    public void markFailed(String nodeId, String message, LocalDateTime now) {
+        this.status = "FAILED";
+        this.currentNodeId = nodeId;
+        this.incidentNodeId = nodeId;
+        this.incidentMessage = message;
+        this.updatedAt = now;
+    }
+
+    /** Clears a previous incident - called whenever a walk succeeds, so a resumed instance doesn't keep a stale one. */
+    public void clearIncident() {
+        this.incidentNodeId = null;
+        this.incidentMessage = null;
     }
 
     public String getStartedBy() {

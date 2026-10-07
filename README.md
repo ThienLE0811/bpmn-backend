@@ -136,7 +136,29 @@ Tất cả route yêu cầu JWT (`Authorization: Bearer <token>`) qua `authInter
 
 Hỗ trợ: start event, end event, user task, exclusive gateway (điều kiện JEXL `${...}` + default flow), **parallel gateway** (fork/join thật, có token-walk + `pendingJoinArrivals`), **inclusive gateway** (OR-split/OR-join, xấp xỉ bằng reachability - xem code/comment trong `ProcessEngine` để biết giới hạn), service task & business rule task (chạy tự động, không tạo Task cho người dùng; business rule task có thể bind `camunda:decisionRef`/`camunda:resultVariable` để gọi DMN thật qua `DmnEvaluator`).
 
-**Chưa hỗ trợ**: subprocess/call activity, timer event, boundary event, script task. Không có process nào hiện có trong DB dev dùng các phần tử này, nhưng nếu import BPMN có chúng, engine sẽ lỗi khi gặp node lạ.
+**Connector cho service task**: một `serviceTask` có thể bind vào connector bằng extension element kiểu Camunda 7:
+
+```xml
+<serviceTask id="call1" name="Check credit">
+  <extensionElements>
+    <camunda:connector>
+      <camunda:connectorId>http</camunda:connectorId>
+      <camunda:inputOutput>
+        <camunda:inputParameter name="url">https://api.example.com/credit</camunda:inputParameter>
+        <camunda:inputParameter name="method">POST</camunda:inputParameter>
+        <camunda:inputParameter name="customerId">${customer.id}</camunda:inputParameter>
+        <camunda:outputParameter name="creditScore">${json.score}</camunda:outputParameter>
+      </camunda:inputOutput>
+    </camunda:connector>
+  </extensionElements>
+</serviceTask>
+```
+
+Giá trị bọc `${...}` là biểu thức JEXL, còn lại là chuỗi literal. Input resolve theo process variables, output resolve theo **map kết quả của connector** rồi ghi vào biến mang tên đó. `ProcessEngine` không tự gọi I/O: nó nhận `ConnectorInvoker` (cùng kiểu inject như `DmnDecisionEvaluator`), implement thật là `ConnectorRegistry` trong `com.example.bpmn.connector`. Connector đăng ký bằng code, không lưu DB — hiện mới có `http` (input: `url`, `method`, `body`, `contentType`, `failOnError`, `header.*`; output: `statusCode`, `body`, `json`), timeout cấu hình qua `connector.http.*-timeout-seconds`.
+
+Connector chạy **đồng bộ** ngay trong request start/complete. Khi nó lỗi, instance không bị mất: chuyển sang `FAILED` kèm `incident_node_id`/`incident_message` để xem được lỗi ở node nào. **Chưa có**: endpoint retry, secret store (đừng để API key thẳng trong BPMN XML — XML được version và trả về qua API), allowlist URL (một model bất kỳ hiện có thể gọi tới địa chỉ nội bộ), và connector không idempotent khi chạy lại.
+
+**Chưa hỗ trợ**: subprocess/call activity, script task, message/signal event. Không có process nào hiện có trong DB dev dùng các phần tử này, nhưng nếu import BPMN có chúng, engine sẽ lỗi khi gặp node lạ.
 
 **Giới hạn DMN**: chỉ đọc `<decisionTable>` đầu tiên trong file DMN, chỉ hỗ trợ hit policy `UNIQUE`/`FIRST`, input entry dạng so sánh đơn giản (`=`, `<`, `<=`, `>`, `>=`, `-` wildcard) — chưa hỗ trợ FEEL range (`[100..200]`) hay danh sách giá trị (`"A","B"`).
 

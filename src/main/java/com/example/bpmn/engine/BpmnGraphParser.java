@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,13 +22,14 @@ import java.util.Map;
  * Parses a BPMN 2.0 XML document into an in-memory {@link BpmnProcessDefinition} graph
  * that {@link ProcessEngine} can walk. Understands startEvent (optionally with a timer -
  * timeDuration/timeDate/timeCycle), endEvent, userTask, exclusiveGateway, parallelGateway,
- * inclusiveGateway, serviceTask, businessRuleTask, sequenceFlow, timer boundaryEvents
- * (attachedToRef + timeDuration/timeDate/timeCycle, either interrupting or non-interrupting
- * via cancelActivity), and standalone timer intermediateCatchEvents (timeDuration/timeDate
- * only - timeCycle is rejected there, repeating a plain wait point has no coherent semantics)
- * - any other flow-node type (subprocess, script task, message/signal events, etc.) is
- * silently skipped when building nodes, which means a sequenceFlow referencing one will fail
- * the "unknown node" validation below with a clear error rather than executing incorrectly.
+ * inclusiveGateway, serviceTask (optionally bound to a connector via a
+ * {@code <camunda:connector>} extension element), businessRuleTask, sequenceFlow, timer
+ * boundaryEvents (attachedToRef + timeDuration/timeDate/timeCycle, either interrupting or
+ * non-interrupting via cancelActivity), and standalone timer intermediateCatchEvents
+ * (timeDuration/timeDate only - timeCycle is rejected there, repeating a plain wait point has no
+ * coherent semantics) - any other flow-node type (subprocess, script task, message/signal events,
+ * etc.) is silently skipped when building nodes, which means a sequenceFlow referencing one will
+ * fail the "unknown node" validation below with a clear error rather than executing incorrectly.
  */
 public class BpmnGraphParser {
     private static final String CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn";
@@ -50,62 +52,62 @@ public class BpmnGraphParser {
         int startEventCount = 0;
         int endEventCount = 0;
 
-        NodeList children = processElement.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() != Node.ELEMENT_NODE) {
-                continue;
-            }
-            Element element = (Element) child;
-            String localName = element.getLocalName() != null ? element.getLocalName() : element.getNodeName();
-
-            switch (localName) {
+        for (Element element : childElements(processElement)) {
+            switch (localName(element)) {
                 case "startEvent" -> {
                     String id = element.getAttribute("id");
                     String name = nullIfBlank(element.getAttribute("name"));
                     if (hasTimerEventDefinition(element)) {
                         TimerDefinition timer = parseTimerEventDefinition(element, id);
-                        nodesById.put(id, new BpmnNode(id, BpmnNodeType.START_EVENT, name, null,
-                                null, timer.duration(), timer.date(), timer.cycle(), true));
+                        nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.START_EVENT).name(name)
+                                .timer(timer.duration(), timer.date(), timer.cycle()).build());
                     } else {
-                        nodesById.put(id, new BpmnNode(id, BpmnNodeType.START_EVENT, name, null));
+                        nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.START_EVENT).name(name).build());
                     }
                     startNodeId = id;
                     startEventCount++;
                 }
                 case "endEvent" -> {
                     String id = element.getAttribute("id");
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.END_EVENT, nullIfBlank(element.getAttribute("name")), null));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.END_EVENT)
+                            .name(nullIfBlank(element.getAttribute("name"))).build());
                     endEventCount++;
                 }
                 case "userTask" -> {
                     String id = element.getAttribute("id");
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.USER_TASK, nullIfBlank(element.getAttribute("name")), null));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.USER_TASK)
+                            .name(nullIfBlank(element.getAttribute("name"))).build());
                 }
                 case "exclusiveGateway" -> {
                     String id = element.getAttribute("id");
                     String defaultFlowId = nullIfBlank(element.getAttribute("default"));
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.EXCLUSIVE_GATEWAY, nullIfBlank(element.getAttribute("name")), defaultFlowId));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.EXCLUSIVE_GATEWAY)
+                            .name(nullIfBlank(element.getAttribute("name"))).defaultFlowId(defaultFlowId).build());
                 }
                 case "parallelGateway" -> {
                     String id = element.getAttribute("id");
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.PARALLEL_GATEWAY, nullIfBlank(element.getAttribute("name")), null));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.PARALLEL_GATEWAY)
+                            .name(nullIfBlank(element.getAttribute("name"))).build());
                 }
                 case "inclusiveGateway" -> {
                     String id = element.getAttribute("id");
                     String defaultFlowId = nullIfBlank(element.getAttribute("default"));
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.INCLUSIVE_GATEWAY, nullIfBlank(element.getAttribute("name")), defaultFlowId));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.INCLUSIVE_GATEWAY)
+                            .name(nullIfBlank(element.getAttribute("name"))).defaultFlowId(defaultFlowId).build());
                 }
                 case "serviceTask" -> {
                     String id = element.getAttribute("id");
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.SERVICE_TASK, nullIfBlank(element.getAttribute("name")), null));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.SERVICE_TASK)
+                            .name(nullIfBlank(element.getAttribute("name")))
+                            .connector(parseConnector(element, id)).build());
                 }
                 case "businessRuleTask" -> {
                     String id = element.getAttribute("id");
                     String decisionRef = camundaAttribute(element, "decisionRef");
                     String resultVariable = camundaAttribute(element, "resultVariable");
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.BUSINESS_RULE_TASK,
-                            nullIfBlank(element.getAttribute("name")), null, decisionRef, resultVariable));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.BUSINESS_RULE_TASK)
+                            .name(nullIfBlank(element.getAttribute("name")))
+                            .decision(decisionRef, resultVariable).build());
                 }
                 case "boundaryEvent" -> {
                     String id = element.getAttribute("id");
@@ -119,9 +121,11 @@ public class BpmnGraphParser {
                         throw new AppException("Boundary event " + id
                                 + " has timeCycle but is interrupting - repeating boundary timers require cancelActivity=\"false\"", 400);
                     }
-                    nodesById.put(id, new BpmnNode(id, BpmnNodeType.BOUNDARY_TIMER_EVENT,
-                            nullIfBlank(element.getAttribute("name")), null, attachedToRef,
-                            timer.duration(), timer.date(), timer.cycle(), interrupting));
+                    nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.BOUNDARY_TIMER_EVENT)
+                            .name(nullIfBlank(element.getAttribute("name")))
+                            .attachedToNodeId(attachedToRef)
+                            .timer(timer.duration(), timer.date(), timer.cycle())
+                            .interrupting(interrupting).build());
                 }
                 case "intermediateCatchEvent" -> {
                     String id = element.getAttribute("id");
@@ -131,9 +135,9 @@ public class BpmnGraphParser {
                             throw new AppException("Intermediate catch event " + id
                                     + " has timeCycle - repeating intermediate timers are not supported, only timeDuration/timeDate are", 400);
                         }
-                        nodesById.put(id, new BpmnNode(id, BpmnNodeType.INTERMEDIATE_CATCH_TIMER_EVENT,
-                                nullIfBlank(element.getAttribute("name")), null,
-                                null, timer.duration(), timer.date(), null, true));
+                        nodesById.put(id, BpmnNode.builder(id, BpmnNodeType.INTERMEDIATE_CATCH_TIMER_EVENT)
+                                .name(nullIfBlank(element.getAttribute("name")))
+                                .timer(timer.duration(), timer.date(), null).build());
                     }
                     // Non-timer intermediate catch events (message/signal/etc.) are not supported yet -
                     // intentionally not added as a node, same as other unsupported element types.
@@ -188,39 +192,70 @@ public class BpmnGraphParser {
     private record TimerDefinition(String duration, String date, String cycle) {
     }
 
-    /** Checks for a {@code <timerEventDefinition>} child without requiring/parsing it - used by event types where a timer is optional (startEvent, intermediateCatchEvent), unlike boundaryEvent where it's mandatory. */
-    private static boolean hasTimerEventDefinition(Element element) {
-        NodeList children = element.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() != Node.ELEMENT_NODE) {
-                continue;
-            }
-            Element childElement = (Element) child;
-            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
-            if ("timerEventDefinition".equals(localName)) {
-                return true;
+    /**
+     * Reads a service task's {@code <extensionElements><camunda:connector>} binding, or returns
+     * null when it has none - an unbound service task stays valid and is walked straight through.
+     * Parameter values are deliberately kept as raw text and only evaluated at execution time, see
+     * {@link ConnectorBinding}.
+     */
+    private static ConnectorBinding parseConnector(Element taskElement, String taskId) {
+        Element extensionElements = firstChildByLocalName(taskElement, "extensionElements");
+        if (extensionElements == null) {
+            return null;
+        }
+        Element connector = firstChildByLocalName(extensionElements, "connector");
+        if (connector == null) {
+            return null;
+        }
+
+        Element connectorIdElement = firstChildByLocalName(connector, "connectorId");
+        String connectorId = connectorIdElement != null ? nullIfBlank(connectorIdElement.getTextContent()) : null;
+        if (connectorId == null) {
+            throw new AppException("Service task " + taskId + " has a <connector> without a non-empty <connectorId>", 400);
+        }
+
+        Map<String, String> inputs = new LinkedHashMap<>();
+        Map<String, String> outputs = new LinkedHashMap<>();
+        Element inputOutput = firstChildByLocalName(connector, "inputOutput");
+        if (inputOutput != null) {
+            for (Element parameter : childElements(inputOutput)) {
+                String parameterType = localName(parameter);
+                Map<String, String> target = switch (parameterType) {
+                    case "inputParameter" -> inputs;
+                    case "outputParameter" -> outputs;
+                    default -> null;
+                };
+                if (target == null) {
+                    continue;
+                }
+                String name = nullIfBlank(parameter.getAttribute("name"));
+                if (name == null) {
+                    throw new AppException("Service task " + taskId + " has a <" + parameterType
+                            + "> without a name attribute", 400);
+                }
+                if (!childElements(parameter).isEmpty()) {
+                    throw new AppException("Service task " + taskId + " " + parameterType + " \"" + name
+                            + "\" has nested elements - only plain text and ${...} expressions are supported", 400);
+                }
+                if (target.containsKey(name)) {
+                    throw new AppException("Service task " + taskId + " declares " + parameterType + " \""
+                            + name + "\" more than once", 400);
+                }
+                target.put(name, parameter.getTextContent().trim());
             }
         }
-        return false;
+
+        return new ConnectorBinding(connectorId, inputs, outputs);
+    }
+
+    /** Checks for a {@code <timerEventDefinition>} child without requiring/parsing it - used by event types where a timer is optional (startEvent, intermediateCatchEvent), unlike boundaryEvent where it's mandatory. */
+    private static boolean hasTimerEventDefinition(Element element) {
+        return firstChildByLocalName(element, "timerEventDefinition") != null;
     }
 
     /** Reads the {@code <timerEventDefinition>} child of a boundary event and validates its {@code timeDuration}/{@code timeDate}/{@code timeCycle} eagerly. */
     private static TimerDefinition parseTimerEventDefinition(Element boundaryEventElement, String boundaryEventId) {
-        Element timerEventDefinition = null;
-        NodeList children = boundaryEventElement.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() != Node.ELEMENT_NODE) {
-                continue;
-            }
-            Element childElement = (Element) child;
-            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
-            if ("timerEventDefinition".equals(localName)) {
-                timerEventDefinition = childElement;
-                break;
-            }
-        }
+        Element timerEventDefinition = firstChildByLocalName(boundaryEventElement, "timerEventDefinition");
         if (timerEventDefinition == null) {
             throw new AppException("Boundary event " + boundaryEventId
                     + " has no timerEventDefinition - only timer boundary events are supported", 400);
@@ -229,21 +264,15 @@ public class BpmnGraphParser {
         String duration = null;
         String date = null;
         String cycle = null;
-        NodeList timerChildren = timerEventDefinition.getChildNodes();
-        for (int i = 0; i < timerChildren.getLength(); i++) {
-            Node child = timerChildren.item(i);
-            if (child.getNodeType() != Node.ELEMENT_NODE) {
-                continue;
-            }
-            Element childElement = (Element) child;
-            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
+        for (Element childElement : childElements(timerEventDefinition)) {
             String text = stripExpressionWrapper(childElement.getTextContent());
-            if ("timeDuration".equals(localName)) {
-                duration = text;
-            } else if ("timeDate".equals(localName)) {
-                date = text;
-            } else if ("timeCycle".equals(localName)) {
-                cycle = text;
+            switch (localName(childElement)) {
+                case "timeDuration" -> duration = text;
+                case "timeDate" -> date = text;
+                case "timeCycle" -> cycle = text;
+                default -> {
+                    // Any other timerEventDefinition child is irrelevant here.
+                }
             }
         }
 
@@ -279,22 +308,36 @@ public class BpmnGraphParser {
         String sourceRef = element.getAttribute("sourceRef");
         String targetRef = element.getAttribute("targetRef");
 
-        String condition = null;
-        NodeList children = element.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() != Node.ELEMENT_NODE) {
-                continue;
-            }
-            Element childElement = (Element) child;
-            String localName = childElement.getLocalName() != null ? childElement.getLocalName() : childElement.getNodeName();
-            if ("conditionExpression".equals(localName)) {
-                condition = stripExpressionWrapper(childElement.getTextContent());
-                break;
-            }
-        }
+        Element conditionElement = firstChildByLocalName(element, "conditionExpression");
+        String condition = conditionElement != null ? stripExpressionWrapper(conditionElement.getTextContent()) : null;
 
         return new BpmnSequenceFlow(id, sourceRef, targetRef, condition);
+    }
+
+    private static List<Element> childElements(Element parent) {
+        List<Element> elements = new ArrayList<>();
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE) {
+                elements.add((Element) child);
+            }
+        }
+        return elements;
+    }
+
+    private static Element firstChildByLocalName(Element parent, String localName) {
+        for (Element child : childElements(parent)) {
+            if (localName.equals(localName(child))) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    /** Falls back to the qualified node name for documents parsed without a resolvable namespace declaration. */
+    private static String localName(Element element) {
+        return element.getLocalName() != null ? element.getLocalName() : element.getNodeName();
     }
 
     private static String stripExpressionWrapper(String text) {

@@ -6,6 +6,7 @@ import com.example.bpmn.dto.DmnDecisionUpdateRequest;
 import com.example.bpmn.dto.PageResponse;
 import com.example.bpmn.dto.ProcessInstanceResponse;
 import com.example.bpmn.dto.StartProcessInstanceRequest;
+import com.example.bpmn.engine.ConnectorInvoker;
 import com.example.bpmn.exception.AppException;
 import com.example.bpmn.model.BpmnProcess;
 import com.example.bpmn.model.BpmnProcessStartTimer;
@@ -133,7 +134,35 @@ class ProcessInstanceServiceTest {
             </definitions>
             """;
 
+    private static final String CONNECTOR_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="defs" targetNamespace="http://example.com">
+              <process id="connector_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="call1" />
+                <serviceTask id="call1" name="Check credit">
+                  <extensionElements>
+                    <camunda:connector>
+                      <camunda:connectorId>http</camunda:connectorId>
+                      <camunda:inputOutput>
+                        <camunda:inputParameter name="url">https://api.example.com/credit</camunda:inputParameter>
+                        <camunda:inputParameter name="customerId">${customerId}</camunda:inputParameter>
+                        <camunda:outputParameter name="creditScore">${score}</camunda:outputParameter>
+                      </camunda:inputOutput>
+                    </camunda:connector>
+                  </extensionElements>
+                </serviceTask>
+                <sequenceFlow id="f2" sourceRef="call1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
+
     private ProcessInstanceService processInstanceService;
+    /** Reassigned per test so the fake connector can succeed, fail, or record what it was handed. */
+    private ConnectorInvoker connectorInvoker;
+    private final List<Map<String, Object>> connectorCalls = new ArrayList<>();
     private final Map<String, BpmnProcess> processes = new ConcurrentHashMap<>();
     private final Map<String, ProcessInstance> instances = new ConcurrentHashMap<>();
     private final Map<String, Task> tasks = new ConcurrentHashMap<>();
@@ -147,6 +176,8 @@ class ProcessInstanceServiceTest {
         tasks.clear();
         timerWaits.clear();
         startTimers.clear();
+        connectorCalls.clear();
+        connectorInvoker = (connectorId, inputs) -> Map.of();
 
         BpmnProcessRepository mockProcessRepo = new BpmnProcessRepository() {
             @Override
@@ -362,7 +393,10 @@ class ProcessInstanceServiceTest {
         };
 
         processInstanceService = new ProcessInstanceServiceImpl(mockProcessRepo, mockInstanceRepo, mockTaskRepo, mockDmnService,
-                mockTimerWaitRepo, mockStartTimerRepo);
+                mockTimerWaitRepo, mockStartTimerRepo, (connectorId, inputs) -> {
+                    connectorCalls.add(inputs);
+                    return connectorInvoker.invoke(connectorId, inputs);
+                });
     }
 
     private BpmnProcessStartTimer seedStartTimer(String processId, LocalDateTime nextFireAt, Integer repeatsRemaining) {
@@ -595,5 +629,44 @@ class ProcessInstanceServiceTest {
 
         assertTrue(instances.isEmpty());
         assertNull(startTimers.get("proc-1"));
+    }
+
+    @Test
+    @DisplayName("Should run a service task's connector with resolved inputs and store its outputs as variables")
+    void testStartInstanceRunsServiceTaskConnector() {
+        seedProcess("proc-1", CONNECTOR_PROCESS_XML);
+        connectorInvoker = (connectorId, inputs) -> Map.of("score", 720);
+
+        ProcessInstanceResponse response = processInstanceService.startInstance(
+                startRequest("proc-1", Map.of("customerId", "C-1")), "alice");
+
+        assertEquals(1, connectorCalls.size());
+        // Literal input passed through as written, ${...} input resolved from the process variables.
+        assertEquals("https://api.example.com/credit", connectorCalls.get(0).get("url"));
+        assertEquals("C-1", connectorCalls.get(0).get("customerId"));
+        assertEquals("COMPLETED", response.getStatus());
+        assertEquals(720, response.getVariables().get("creditScore"));
+        assertNull(response.getIncidentMessage());
+    }
+
+    @Test
+    @DisplayName("Should park the instance in FAILED with an incident when its connector fails, instead of discarding it")
+    void testStartInstanceRecordsIncidentWhenConnectorFails() {
+        seedProcess("proc-1", CONNECTOR_PROCESS_XML);
+        connectorInvoker = (connectorId, inputs) -> {
+            throw new AppException("connect timed out", 502);
+        };
+
+        ProcessInstanceResponse response = processInstanceService.startInstance(
+                startRequest("proc-1", Map.of("customerId", "C-1")), "alice");
+
+        assertEquals("FAILED", response.getStatus());
+        assertEquals("call1", response.getIncidentNodeId());
+        assertEquals("call1", response.getCurrentNodeId());
+        assertTrue(response.getIncidentMessage().contains("connect timed out"));
+        assertNull(response.getCompletedAt());
+        // The instance row survives the failure so it can be inspected and resumed.
+        assertEquals(1, instances.size());
+        assertEquals("FAILED", instances.values().iterator().next().getStatus());
     }
 }

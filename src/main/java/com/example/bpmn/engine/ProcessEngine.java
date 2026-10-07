@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,20 +38,15 @@ import java.util.Set;
  * call for that instance, and must also pass the up-to-date {@code otherActiveNodeIds} so
  * inclusive joins can tell which branches are still expected.
  *
- * <p>A business rule task bound to a DMN decision (via {@code camunda:decisionRef}) is still
- * "pure" from the engine's perspective: evaluation itself is delegated to the caller-supplied
- * {@link DmnDecisionEvaluator}, and its result is merged into the variables carried through the
- * walk (and returned via {@link AdvanceResult#getUpdatedVariables()}), not persisted directly.
+ * <p>A business rule task bound to a DMN decision (via {@code camunda:decisionRef}) and a service
+ * task bound to a connector (via {@code <camunda:connector>}) are both still "pure" from the
+ * engine's perspective: the evaluation or call itself is delegated to the caller-supplied
+ * {@link EngineCallbacks}, and the result is merged into the variables carried through the walk
+ * (and returned via {@link AdvanceResult#getUpdatedVariables()}), not persisted directly.
  */
 public class ProcessEngine {
     private static final int MAX_HOPS = 1000;
     private static final JexlEngine JEXL = new JexlBuilder().create();
-
-    /** Used when a caller doesn't supply a {@link DmnDecisionEvaluator} - only invoked (and only then fails) if a business rule task actually references a DMN decision. */
-    private static final DmnDecisionEvaluator NO_DMN_EVALUATOR = (decisionRef, vars) -> {
-        throw new AppException("Business rule task references DMN decision \"" + decisionRef
-                + "\" but no DMN evaluator was supplied to ProcessEngine.advance", 500);
-    };
 
     private ProcessEngine() {
     }
@@ -69,12 +65,13 @@ public class ProcessEngine {
 
     public static AdvanceResult advance(BpmnProcessDefinition def, String fromNodeId, Map<String, Object> variables,
                                          Set<String> pendingJoinArrivals, Set<String> otherActiveNodeIds) {
-        return advance(def, fromNodeId, variables, pendingJoinArrivals, otherActiveNodeIds, NO_DMN_EVALUATOR);
+        return advance(def, fromNodeId, variables, pendingJoinArrivals, otherActiveNodeIds, EngineCallbacks.none());
     }
 
     public static AdvanceResult advance(BpmnProcessDefinition def, String fromNodeId, Map<String, Object> variables,
                                          Set<String> pendingJoinArrivals, Set<String> otherActiveNodeIds,
-                                         DmnDecisionEvaluator dmnEvaluator) {
+                                         EngineCallbacks callbacks) {
+        EngineCallbacks effectiveCallbacks = callbacks != null ? callbacks : EngineCallbacks.none();
         Map<String, Object> vars = new HashMap<>(variables != null ? variables : Map.of());
         Set<String> arrivals = new HashSet<>(pendingJoinArrivals != null ? pendingJoinArrivals : Set.of());
         Set<String> otherActive = otherActiveNodeIds != null ? otherActiveNodeIds : Set.of();
@@ -136,7 +133,10 @@ public class ProcessEngine {
             }
 
             if (node.getType() == BpmnNodeType.BUSINESS_RULE_TASK && node.getDecisionRef() != null) {
-                applyDmnDecision(node, vars, dmnEvaluator);
+                applyDmnDecision(node, vars, effectiveCallbacks.dmnEvaluator());
+            }
+            if (node.getType() == BpmnNodeType.SERVICE_TASK && node.getConnectorBinding() != null) {
+                applyConnector(node, vars, effectiveCallbacks.connectorInvoker());
             }
 
             String nextFlowId;
@@ -170,6 +170,55 @@ public class ProcessEngine {
                 value = decisionResult;
             }
             vars.put(node.getResultVariable(), value);
+        }
+    }
+
+    /**
+     * Resolves the service task's connector inputs against {@code vars}, hands them to the
+     * invoker, then writes each output back into {@code vars} (in place) so a gateway reached
+     * later in the same walk can branch on what the connector returned.
+     *
+     * <p>Every failure here - a bad expression, an unknown connector, an error raised by the
+     * connector itself - is reported as a {@link ConnectorException} naming this node, so the
+     * caller can record an incident against it rather than losing the walk's instance state.
+     */
+    private static void applyConnector(BpmnNode node, Map<String, Object> vars, ConnectorInvoker invoker) {
+        ConnectorBinding binding = node.getConnectorBinding();
+        try {
+            Map<String, Object> inputs = new LinkedHashMap<>();
+            binding.getInputs().forEach((name, rawValue) -> inputs.put(name, resolveValue(rawValue, vars)));
+
+            Map<String, Object> result = invoker.invoke(binding.getConnectorId(), inputs);
+            // Outputs read from what the connector returned, not from the process variables.
+            Map<String, Object> resultScope = result != null ? result : Map.of();
+            binding.getOutputs().forEach((variableName, rawValue) -> vars.put(variableName, resolveValue(rawValue, resultScope)));
+        } catch (Exception e) {
+            throw new ConnectorException(node.getId(), binding.getConnectorId(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * A connector parameter value: {@code ${...}} is a JEXL expression evaluated against
+     * {@code scope}, anything else is the literal text as written in the BPMN XML.
+     */
+    private static Object resolveValue(String rawValue, Map<String, Object> scope) {
+        if (rawValue == null) {
+            return null;
+        }
+        String trimmed = rawValue.trim();
+        if (!trimmed.startsWith("${") || !trimmed.endsWith("}")) {
+            return rawValue;
+        }
+        String expression = trimmed.substring(2, trimmed.length() - 1).trim();
+        if (expression.contains("${")) {
+            throw new AppException("Value \"" + rawValue
+                    + "\" mixes text and expressions - a parameter must be either one whole ${...} expression or plain text", 400);
+        }
+        try {
+            JexlContext context = new MapContext(new HashMap<>(scope));
+            return JEXL.createExpression(expression).evaluate(context);
+        } catch (Exception e) {
+            throw new AppException("Failed to evaluate expression \"" + expression + "\": " + e.getMessage(), 400);
         }
     }
 

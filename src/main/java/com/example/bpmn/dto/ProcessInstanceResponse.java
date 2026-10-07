@@ -15,6 +15,8 @@ public class ProcessInstanceResponse {
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String incidentNodeId;
+    private String incidentMessage;
 
     public ProcessInstanceResponse() {
     }
@@ -122,5 +124,23 @@ public class ProcessInstanceResponse {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    /** Node a FAILED instance stopped at, or null - set when a service task's connector failed. */
+    public String getIncidentNodeId() {
+        return incidentNodeId;
+    }
+
+    public void setIncidentNodeId(String incidentNodeId) {
+        this.incidentNodeId = incidentNodeId;
+    }
+
+    /** Why the instance failed at {@link #getIncidentNodeId()}, or null. */
+    public String getIncidentMessage() {
+        return incidentMessage;
+    }
+
+    public void setIncidentMessage(String incidentMessage) {
+        this.incidentMessage = incidentMessage;
     }
 }

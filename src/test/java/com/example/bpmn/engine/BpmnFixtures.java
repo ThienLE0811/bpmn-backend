@@ -207,4 +207,38 @@ final class BpmnFixtures {
               </process>
             </definitions>
             """;
+
+    /** start1 -> call1 (serviceTask bound to the "http" connector) -> task1 */
+    static final String CONNECTOR_PROCESS_XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="defs" targetNamespace="http://example.com">
+              <process id="connector_process" isExecutable="true">
+                <startEvent id="start1" name="Start" />
+                <sequenceFlow id="f1" sourceRef="start1" targetRef="call1" />
+                <serviceTask id="call1" name="Check credit">
+                  <extensionElements>
+                    <camunda:connector>
+                      <camunda:connectorId>http</camunda:connectorId>
+                      <camunda:inputOutput>
+                        <camunda:inputParameter name="url">https://api.example.com/credit</camunda:inputParameter>
+                        <camunda:inputParameter name="customerId">${customer.id}</camunda:inputParameter>
+                        <camunda:outputParameter name="creditScore">${json.score}</camunda:outputParameter>
+                        <camunda:outputParameter name="checkedBy">risk-api</camunda:outputParameter>
+                      </camunda:inputOutput>
+                    </camunda:connector>
+                  </extensionElements>
+                </serviceTask>
+                <sequenceFlow id="f2" sourceRef="call1" targetRef="gw1" />
+                <exclusiveGateway id="gw1" default="f4" />
+                <sequenceFlow id="f3" sourceRef="gw1" targetRef="task1">
+                  <conditionExpression>${creditScore > 700}</conditionExpression>
+                </sequenceFlow>
+                <userTask id="task1" name="Manual review" />
+                <sequenceFlow id="f5" sourceRef="task1" targetRef="end1" />
+                <sequenceFlow id="f4" sourceRef="gw1" targetRef="end1" />
+                <endEvent id="end1" name="Done" />
+              </process>
+            </definitions>
+            """;
 }

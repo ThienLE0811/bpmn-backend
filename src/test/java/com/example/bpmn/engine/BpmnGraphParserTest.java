@@ -435,4 +435,115 @@ class BpmnGraphParserTest {
         AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(malformed));
         assertEquals(400, ex.getStatusCode());
     }
+
+    @Test
+    @DisplayName("Should parse a service task's camunda connector binding, keeping values as raw text")
+    void parsesServiceTaskConnectorBinding() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.CONNECTOR_PROCESS_XML);
+
+        ConnectorBinding binding = def.getNode("call1").getConnectorBinding();
+        assertNotNull(binding);
+        assertEquals("http", binding.getConnectorId());
+        // Expressions stay wrapped here - they are only evaluated when the task is executed.
+        assertEquals("https://api.example.com/credit", binding.getInputs().get("url"));
+        assertEquals("${customer.id}", binding.getInputs().get("customerId"));
+        assertEquals("${json.score}", binding.getOutputs().get("creditScore"));
+        assertEquals("risk-api", binding.getOutputs().get("checkedBy"));
+        assertEquals(List.of("url", "customerId"), List.copyOf(binding.getInputs().keySet()));
+    }
+
+    @Test
+    @DisplayName("A service task without extension elements should parse with no connector binding")
+    void parsesServiceTaskWithoutConnector() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.SERVICE_TASK_PROCESS_XML);
+
+        assertNull(def.getNode("svc1").getConnectorBinding());
+    }
+
+    @Test
+    @DisplayName("Should reject a connector with no connectorId")
+    void rejectsConnectorWithoutConnectorId() {
+        String xml = connectorXml("""
+                      <camunda:inputOutput>
+                        <camunda:inputParameter name="url">https://x</camunda:inputParameter>
+                      </camunda:inputOutput>
+                """);
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("connectorId"));
+    }
+
+    @Test
+    @DisplayName("Should reject a connector parameter with no name")
+    void rejectsConnectorParameterWithoutName() {
+        String xml = connectorXml("""
+                      <camunda:connectorId>http</camunda:connectorId>
+                      <camunda:inputOutput>
+                        <camunda:inputParameter>https://x</camunda:inputParameter>
+                      </camunda:inputOutput>
+                """);
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("name attribute"));
+    }
+
+    @Test
+    @DisplayName("Should reject a connector parameter with nested elements rather than silently reading it as empty")
+    void rejectsConnectorParameterWithNestedElements() {
+        String xml = connectorXml("""
+                      <camunda:connectorId>http</camunda:connectorId>
+                      <camunda:inputOutput>
+                        <camunda:inputParameter name="payload">
+                          <camunda:map>
+                            <camunda:entry key="a">1</camunda:entry>
+                          </camunda:map>
+                        </camunda:inputParameter>
+                      </camunda:inputOutput>
+                """);
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("nested elements"));
+    }
+
+    @Test
+    @DisplayName("Should reject a connector that declares the same input twice instead of silently keeping one")
+    void rejectsDuplicateConnectorParameter() {
+        String xml = connectorXml("""
+                      <camunda:connectorId>http</camunda:connectorId>
+                      <camunda:inputOutput>
+                        <camunda:inputParameter name="url">https://a</camunda:inputParameter>
+                        <camunda:inputParameter name="url">https://b</camunda:inputParameter>
+                      </camunda:inputOutput>
+                """);
+
+        AppException ex = assertThrows(AppException.class, () -> BpmnGraphParser.parse(xml));
+        assertEquals(400, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("more than once"));
+    }
+
+    /** Wraps {@code connectorBody} in a minimal one-service-task process. */
+    private static String connectorXml(String connectorBody) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                             xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="defs" targetNamespace="http://example.com">
+                  <process id="p" isExecutable="true">
+                    <startEvent id="start1" />
+                    <sequenceFlow id="f1" sourceRef="start1" targetRef="call1" />
+                    <serviceTask id="call1">
+                      <extensionElements>
+                        <camunda:connector>
+                %s
+                        </camunda:connector>
+                      </extensionElements>
+                    </serviceTask>
+                    <sequenceFlow id="f2" sourceRef="call1" targetRef="end1" />
+                    <endEvent id="end1" />
+                  </process>
+                </definitions>
+                """.formatted(connectorBody);
+    }
 }

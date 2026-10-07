@@ -64,6 +64,31 @@ class PostgresProcessInstanceRepositoryTest extends PostgresRepositoryTestBase {
         assertNull(found.getCompletedAt());
         assertEquals(NOW, found.getCreatedAt());
         assertEquals(NOW, found.getUpdatedAt());
+        assertNull(found.getIncidentNodeId());
+        assertNull(found.getIncidentMessage());
+    }
+
+    @Test
+    @DisplayName("save persists an incident, and a later successful save clears it again")
+    void incidentIsPersistedAndCleared() {
+        ProcessInstance instance = newInstance("i1", NOW);
+        instance.markFailed("call1", "Connector \"http\" on service task call1 failed: connect timed out", NOW);
+
+        repository.save(instance);
+
+        ProcessInstance failed = repository.findById("i1").orElseThrow();
+        assertEquals("FAILED", failed.getStatus());
+        assertEquals("call1", failed.getIncidentNodeId());
+        assertTrue(failed.getIncidentMessage().contains("connect timed out"));
+
+        failed.clearIncident();
+        failed.setStatus("RUNNING");
+        repository.save(failed);
+
+        ProcessInstance resumed = repository.findById("i1").orElseThrow();
+        assertEquals("RUNNING", resumed.getStatus());
+        assertNull(resumed.getIncidentNodeId());
+        assertNull(resumed.getIncidentMessage());
     }
 
     @Test

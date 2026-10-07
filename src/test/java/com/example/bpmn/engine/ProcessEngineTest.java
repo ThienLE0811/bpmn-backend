@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -162,7 +163,7 @@ class ProcessEngineTest {
             return Map.of("riskLevel", "HIGH");
         };
 
-        AdvanceResult result = ProcessEngine.advance(dmnDef, dmnDef.getStartNodeId(), Map.of(), Set.of(), Set.of(), fakeEvaluator);
+        AdvanceResult result = ProcessEngine.advance(dmnDef, dmnDef.getStartNodeId(), Map.of(), Set.of(), Set.of(), EngineCallbacks.of(fakeEvaluator));
 
         assertEquals(List.of("task2"), result.getNewUserTaskNodeIds());
         assertEquals("HIGH", result.getUpdatedVariables().get("riskLevel"));
@@ -174,7 +175,7 @@ class ProcessEngineTest {
         BpmnProcessDefinition dmnDef = BpmnGraphParser.parse(BpmnFixtures.DMN_BUSINESS_RULE_PROCESS_XML);
         DmnDecisionEvaluator fakeEvaluator = (decisionRef, vars) -> Map.of("riskLevel", "LOW");
 
-        AdvanceResult result = ProcessEngine.advance(dmnDef, dmnDef.getStartNodeId(), Map.of(), Set.of(), Set.of(), fakeEvaluator);
+        AdvanceResult result = ProcessEngine.advance(dmnDef, dmnDef.getStartNodeId(), Map.of(), Set.of(), Set.of(), EngineCallbacks.of(fakeEvaluator));
 
         assertTrue(result.isFullyResolved());
         assertEquals("LOW", result.getUpdatedVariables().get("riskLevel"));
@@ -220,5 +221,81 @@ class ProcessEngineTest {
         AdvanceResult result = ProcessEngine.advance(timerDef, "wait1", Map.of());
 
         assertTrue(result.isFullyResolved());
+    }
+
+    @Test
+    @DisplayName("Service task connector should receive resolved inputs and have its outputs written into the variables")
+    void serviceTaskConnectorResolvesInputsAndOutputs() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.CONNECTOR_PROCESS_XML);
+        List<Map<String, Object>> calls = new ArrayList<>();
+        ConnectorInvoker invoker = (connectorId, inputs) -> {
+            assertEquals("http", connectorId);
+            calls.add(inputs);
+            return Map.of("json", Map.of("score", 800));
+        };
+
+        AdvanceResult result = ProcessEngine.advance(def, def.getStartNodeId(), Map.of("customer", Map.of("id", "C-7")),
+                Set.of(), Set.of(), new EngineCallbacks(null, invoker));
+
+        assertEquals(1, calls.size());
+        assertEquals("https://api.example.com/credit", calls.get(0).get("url"));
+        assertEquals("C-7", calls.get(0).get("customerId"));
+        // ${json.score} resolves against the connector's result, "risk-api" is a literal.
+        assertEquals(800, result.getUpdatedVariables().get("creditScore"));
+        assertEquals("risk-api", result.getUpdatedVariables().get("checkedBy"));
+    }
+
+    @Test
+    @DisplayName("A gateway after a service task should branch on what the connector returned, in the same call")
+    void serviceTaskConnectorOutputIsVisibleToLaterGateway() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.CONNECTOR_PROCESS_XML);
+        ConnectorInvoker invoker = (connectorId, inputs) -> Map.of("json", Map.of("score", 800));
+
+        AdvanceResult result = ProcessEngine.advance(def, def.getStartNodeId(), Map.of("customer", Map.of("id", "C-7")),
+                Set.of(), Set.of(), new EngineCallbacks(null, invoker));
+
+        assertEquals(List.of("task1"), result.getNewUserTaskNodeIds());
+    }
+
+    @Test
+    @DisplayName("A low score from the connector should take the gateway's default flow instead")
+    void serviceTaskConnectorOutputTakesDefaultGatewayBranch() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.CONNECTOR_PROCESS_XML);
+        ConnectorInvoker invoker = (connectorId, inputs) -> Map.of("json", Map.of("score", 300));
+
+        AdvanceResult result = ProcessEngine.advance(def, def.getStartNodeId(), Map.of("customer", Map.of("id", "C-7")),
+                Set.of(), Set.of(), new EngineCallbacks(null, invoker));
+
+        assertTrue(result.isFullyResolved());
+        assertEquals(300, result.getUpdatedVariables().get("creditScore"));
+    }
+
+    @Test
+    @DisplayName("A failing connector should raise a ConnectorException naming the service task it failed at")
+    void serviceTaskConnectorFailureNamesItsNode() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.CONNECTOR_PROCESS_XML);
+        ConnectorInvoker invoker = (connectorId, inputs) -> {
+            throw new AppException("connection refused", 502);
+        };
+
+        ConnectorException error = assertThrows(ConnectorException.class,
+                () -> ProcessEngine.advance(def, def.getStartNodeId(), Map.of("customer", Map.of("id", "C-7")),
+                        Set.of(), Set.of(), new EngineCallbacks(null, invoker)));
+
+        assertEquals("call1", error.getNodeId());
+        assertEquals("http", error.getConnectorId());
+        assertTrue(error.getMessage().contains("connection refused"));
+    }
+
+    @Test
+    @DisplayName("Reaching a bound service task without a connector invoker should fail loudly rather than skip the call")
+    void serviceTaskConnectorWithoutInvokerFails() {
+        BpmnProcessDefinition def = BpmnGraphParser.parse(BpmnFixtures.CONNECTOR_PROCESS_XML);
+
+        ConnectorException error = assertThrows(ConnectorException.class,
+                () -> ProcessEngine.advance(def, def.getStartNodeId(), Map.of("customer", Map.of("id", "C-7"))));
+
+        assertEquals("call1", error.getNodeId());
+        assertTrue(error.getMessage().contains("no connector invoker was supplied"));
     }
 }
