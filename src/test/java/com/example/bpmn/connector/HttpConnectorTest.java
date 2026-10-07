@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,7 +26,7 @@ class HttpConnectorTest {
     private HttpServer server;
     private String baseUrl;
     private final AtomicReference<RecordedRequest> lastRequest = new AtomicReference<>();
-    private final HttpConnector connector = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5));
+    private final HttpConnector connector = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5), List.of("127.0.0.1"));
 
     private record RecordedRequest(String method, String body, String contentType, String authorization) {
     }
@@ -141,5 +142,71 @@ class HttpConnectorTest {
         Map<String, Object> inputs = Map.of("url", "http://127.0.0.1:1/nothing");
 
         assertThrows(AppException.class, () -> connector.execute(inputs));
+    }
+
+    @Test
+    @DisplayName("Should refuse a host that is not in the allow-list, before any request leaves the process")
+    void hostOutsideAllowListIsRefused() {
+        HttpConnector restricted = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5), List.of("api.example.com"));
+        Map<String, Object> inputs = Map.of("url", baseUrl + "/ok");
+
+        AppException ex = assertThrows(AppException.class, () -> restricted.execute(inputs));
+
+        assertEquals(403, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("127.0.0.1"));
+        assertNull(lastRequest.get(), "the request must not have been sent");
+    }
+
+    @Test
+    @DisplayName("An empty allow-list should refuse everything, so an unconfigured deployment cannot be used to probe the network")
+    void emptyAllowListRefusesEverything() {
+        HttpConnector denyAll = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5), List.of());
+        Map<String, Object> inputs = Map.of("url", baseUrl + "/ok");
+
+        assertEquals(403, assertThrows(AppException.class, () -> denyAll.execute(inputs)).getStatusCode());
+    }
+
+    @Test
+    @DisplayName("A *.suffix entry should cover sub-domains but not the bare domain")
+    void subdomainWildcardCoversSubdomainsOnly() {
+        HttpConnector restricted = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5), List.of("*.example.com"));
+
+        // Asserted on the policy itself rather than by calling the hosts: whether a name is
+        // allowed must not depend on whether it happens to resolve from the machine running this.
+        assertTrue(restricted.isHostAllowed("api.example.com"));
+        assertTrue(restricted.isHostAllowed("API.Example.COM"));
+        assertFalse(restricted.isHostAllowed("example.com"));
+        assertFalse(restricted.isHostAllowed("notexample.com"));
+        assertFalse(restricted.isHostAllowed("example.com.evil.net"));
+    }
+
+    @Test
+    @DisplayName("An exact entry should match that host only, case-insensitively")
+    void exactEntryMatchesThatHostOnly() {
+        HttpConnector restricted = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5), List.of("api.example.com"));
+
+        assertTrue(restricted.isHostAllowed("api.example.com"));
+        assertTrue(restricted.isHostAllowed("Api.Example.com"));
+        assertFalse(restricted.isHostAllowed("other.example.com"));
+        assertFalse(restricted.isHostAllowed("evil.com"));
+    }
+
+    @Test
+    @DisplayName("A single \"*\" should switch the host check off for development")
+    void wildcardAllowsAnyHost() {
+        HttpConnector unrestricted = new HttpConnector(Duration.ofSeconds(2), Duration.ofSeconds(5), List.of("*"));
+
+        assertEquals(200, unrestricted.execute(Map.of("url", baseUrl + "/ok")).get("statusCode"));
+    }
+
+    @Test
+    @DisplayName("Should refuse a non-http scheme rather than handing it to the HTTP client")
+    void nonHttpSchemeIsRefused() {
+        Map<String, Object> inputs = Map.of("url", "file:///etc/passwd");
+
+        AppException ex = assertThrows(AppException.class, () -> connector.execute(inputs));
+
+        assertEquals(400, ex.getStatusCode());
+        assertTrue(ex.getMessage().contains("http or https"));
     }
 }

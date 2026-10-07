@@ -156,7 +156,11 @@ Hỗ trợ: start event, end event, user task, exclusive gateway (điều kiện
 
 Giá trị bọc `${...}` là biểu thức JEXL, còn lại là chuỗi literal. Input resolve theo process variables, output resolve theo **map kết quả của connector** rồi ghi vào biến mang tên đó. `ProcessEngine` không tự gọi I/O: nó nhận `ConnectorInvoker` (cùng kiểu inject như `DmnDecisionEvaluator`), implement thật là `ConnectorRegistry` trong `com.example.bpmn.connector`. Connector đăng ký bằng code, không lưu DB — hiện mới có `http` (input: `url`, `method`, `body`, `contentType`, `failOnError`, `header.*`; output: `statusCode`, `body`, `json`), timeout cấu hình qua `connector.http.*-timeout-seconds`.
 
-Connector chạy **đồng bộ** ngay trong request start/complete. Khi nó lỗi, instance không bị mất: chuyển sang `FAILED` kèm `incident_node_id`/`incident_message` để xem được lỗi ở node nào. **Chưa có**: endpoint retry, secret store (đừng để API key thẳng trong BPMN XML — XML được version và trả về qua API), allowlist URL (một model bất kỳ hiện có thể gọi tới địa chỉ nội bộ), và connector không idempotent khi chạy lại.
+`GET /api/connectors` trả về danh sách id connector đang đăng ký, để designer đổ vào dropdown.
+
+**Chặn SSRF**: `connector.http.allowed-hosts` quyết định connector được gọi tới host nào — **mặc định rỗng nghĩa là chặn tất cả**, vì ai sửa được BPMN diagram thì cũng có thể bắt server gọi vào địa chỉ nội bộ rồi đọc kết quả ra qua process variable. Cú pháp: danh sách ngăn bởi dấu phẩy, `*.example.com` khớp sub-domain (không khớp `example.com`), `*` tắt hẳn kiểm tra (chỉ dùng khi dev). Redirect không bao giờ được follow, nên host hợp lệ không thể bật request sang host bị cấm. **Điểm yếu còn lại**: kiểm tra theo *tên*, nên một tên được phép mà bản ghi DNS bị đổi trỏ vào nội bộ thì vẫn lọt.
+
+Connector chạy **đồng bộ** ngay trong request start/complete. Khi nó lỗi, instance không bị mất: chuyển sang `FAILED` kèm `incident_node_id`/`incident_message` để xem được lỗi ở node nào. **Chưa có**: endpoint retry, secret store (đừng để API key thẳng trong BPMN XML — XML được version và trả về qua API), và connector không idempotent khi chạy lại.
 
 **Chưa hỗ trợ**: subprocess/call activity, script task, message/signal event. Không có process nào hiện có trong DB dev dùng các phần tử này, nhưng nếu import BPMN có chúng, engine sẽ lỗi khi gặp node lạ.
 
